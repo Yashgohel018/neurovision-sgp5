@@ -89,6 +89,13 @@ For complete architectural details, see [NEUROVISION_SYSTEM_ARCHITECTURE.md](NEU
 - **Quality Control & Anomaly Detection**: Identifies outlier volumes, empty masks, and zero-slice scans.
 - Comprehensive documentation: [MODULE_B_EXPLANATION.md](MODULE_B_EXPLANATION.md)
 
+### 🔬 Module C: MRI Preprocessing & Patient-Level Splitting
+- **Zero-Data-Leakage Splitting**: Partitions cohort into strictly disjoint, patient-level splits (70% Train: 258, 15% Val: 55, 15% Test: 56) with verified class stratification ($p = 0.9689$).
+- **Non-Zero Z-Score Normalization**: Implements $(I(x) - \mu_{nz}) / \sigma_{nz}$ with $[P_1, P_{99}]$ percentile clamping, safeguarding soft-tissue contrast while preserving background air at $0.0$.
+- **Spatial Standardization**: Automated brain foreground bounding box extraction and symmetric center-crop/padding to $4 \times 128 \times 128 \times 128$ model-ready tensors.
+- **Nearest-Neighbor Mask Resampling**: Preserves categorical ground truth labels $\{0, 1, 2, 4\}$ without spurious fractional artifacts.
+- Comprehensive documentation: [MODULE_C_EXPLANATION.md](MODULE_C_EXPLANATION.md)
+
 ---
 
 ## 📈 Analysis & Visualizations
@@ -111,12 +118,18 @@ The pipeline automatically generates high-resolution figures in `reports/figures
 learnNeuro/
 ├── configs/                          # Pipeline configuration files (YAML)
 │   ├── dataset_config.yaml           # Module A configuration (paths, sequences, validation rules)
-│   └── eda_config.yaml               # Module B configuration (metrics, figure settings, thresholds)
-├── data/                             # Generated metadata and data dictionaries
+│   ├── eda_config.yaml               # Module B configuration (metrics, figure settings, thresholds)
+│   └── preprocessing_config.yaml     # Module C configuration (splits, normalization, shapes)
+├── data/                             # Generated metadata, splits and data dictionaries
 │   ├── data_dictionary.json          # Schema definitions and data types
 │   ├── dataset_metadata.csv          # Per-case sequence paths, dimensions, voxel spacings
 │   ├── dataset_summary.csv           # Aggregate dataset metrics and validation flags
-│   └── tumor_statistics.csv          # Sub-region volumetric and intensity statistics
+│   ├── tumor_statistics.csv          # Sub-region volumetric and intensity statistics
+│   └── splits/                       # Zero-leakage patient-level stratified partitions
+│       ├── train_subjects.csv        # 258 training subjects (79.5% HGG, 20.5% LGG)
+│       ├── val_subjects.csv          # 55 validation subjects (80.0% HGG, 20.0% LGG)
+│       ├── test_subjects.csv         # 56 test subjects (78.6% HGG, 21.4% LGG)
+│       └── split_summary.json        # Formal verification audit & distribution hashes
 ├── docs/                             # Project planning and roadmap documents
 │   ├── BraTS_Brain_Tumor_Classification_2_Month_Project_Plan.docx
 │   └── project_plan_extracted.txt    # 12-Module weekly milestone plan
@@ -124,16 +137,20 @@ learnNeuro/
 │   └── figures/                      # Generated publication-quality figures
 ├── scripts/                          # Entry-point execution scripts
 │   ├── run_module_a.py               # Run dataset indexing and validation pipeline
-│   └── run_module_b.py               # Run exploratory data analysis and QC pipeline
+│   ├── run_module_b.py               # Run exploratory data analysis and QC pipeline
+│   └── run_module_c.py               # Run MRI preprocessing & patient splitting pipeline
 ├── src/                              # Source package modules
 │   ├── module_a_dataset/             # Indexing, NIfTI utilities, integrity validators
 │   ├── module_b_eda/                 # Volumetrics, intensity profiler, statistical analyzer, visualizer
+│   ├── module_c_preprocessing/       # Normalizer, spatial cropper, patient splitter, preprocessor
 │   └── utils/                        # Logging and general helpers
 ├── tests/                            # Unit and integration test suites
 │   ├── test_module_a.py
-│   └── test_module_b.py
+│   ├── test_module_b.py
+│   └── test_module_c.py
 ├── MODULE_A_EXPLANATION.md           # Deep-dive theoretical and technical guide for Module A
 ├── MODULE_B_EXPLANATION.md           # Deep-dive theoretical and technical guide for Module B
+├── MODULE_C_EXPLANATION.md           # Deep-dive theoretical and technical guide for Module C
 ├── NEUROVISION_SYSTEM_ARCHITECTURE.md# Complete system architecture specification
 ├── requirements.txt                  # Python dependencies
 └── README.md                         # Project overview and quickstart
@@ -167,9 +184,14 @@ python scripts/run_module_a.py --config configs/dataset_config.yaml
 python scripts/run_module_b.py --config configs/eda_config.yaml
 ```
 
-### 4. Run Test Suite
+### 4. Run Module C (MRI Preprocessing & Patient Splitting)
 ```bash
-pytest tests/ -v
+python scripts/run_module_c.py --config configs/preprocessing_config.yaml
+```
+
+### 5. Run Automated Test Suite
+```bash
+python -m unittest discover -s tests
 ```
 
 ---
@@ -178,7 +200,7 @@ pytest tests/ -v
 
 - [x] **Module A**: Dataset Indexing, Path Discovery & Integrity Verification
 - [x] **Module B**: Exploratory Data Analysis (EDA) & Volumetric Quality Control
-- [ ] **Module C**: Voxel Intensity Normalization & Multi-sequence Registration
+- [x] **Module C**: Voxel Intensity Normalization & Zero-Leakage Patient Splitting
 - [ ] **Module D**: 3D ROI Cropping & Foreground Mask Extraction
 - [ ] **Module E**: Multimodal 3D Data Loader with Elastic/Spatial Augmentations
 - [ ] **Module F**: 3D ResNet Baseline Classifier

@@ -1,0 +1,50 @@
+# ==============================================================================
+# NeuroVision AI: Autonomous MRI Clinical Decision Support System (CDSS)
+# Configuration for Module C: MRI Preprocessing & Patient-Level Splitting
+# ==============================================================================
+
+project:
+  name: "NeuroVision AI"
+  subsystem: "Autonomous MRI Clinical Decision Support System"
+  scientific_core: "MultiModal-BrainNet (BraTS 2020)"
+  module: "Module C: MRI Preprocessing & Patient-Level Splitting"
+
+inputs:
+  metadata_csv: "data/dataset_metadata.csv"
+  tumor_statistics_csv: "data/tumor_statistics.csv"
+
+splitting:
+  seed: 42
+  train_ratio: 0.70
+  val_ratio: 0.15
+  test_ratio: 0.15
+  stratify_column: "grade"  # Stratify by HGG / LGG to preserve class distribution
+  enforce_patient_level: true
+  output_dir: "data/splits"
+
+normalization:
+  method: "z_score"         # Options: 'z_score', 'min_max', 'none'
+  nonzero_only: true        # Compute mean/std strictly over non-zero brain parenchyma voxels
+  clip_percentiles: [1.0, 99.0]  # Robust clipping thresholds established in Module B
+  epsilon: 1e-7
+
+spatial:
+  target_shape: [128, 128, 128]   # GPU-feasible 3D tensor shape (Depth, Height, Width)
+  crop_strategy: "foreground_bbox" # Crop empty air around brain before resize/pad
+  resample_mode: "trilinear"      # Trilinear for MRI intensities
+  mask_resample_mode: "nearest"   # Nearest-neighbor for discrete segmentation masks
+  pad_value: 0.0
+
+multimodal:
+  modalities: ["t1", "t1ce", "t2", "flair"]
+  include_seg: true
+  channel_order: ["t1", "t1ce", "t2", "flair"]
+
+caching:
+  output_dir: "data/processed"
+  save_format: "npz"              # Compressed numpy tensors for fast streaming
+  dtype: "float32"
+  mask_dtype: "uint8"
+
+documentation:
+  explanation_file: "MODULE_C_EXPLANATION.md"
