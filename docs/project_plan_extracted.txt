@@ -1,0 +1,410 @@
+Brain Tumor Classification using BraTS
+Module-wise Technical Requirements, Workflow and 2-Month Implementation Plan
+Project Parameter
+Recommended Scope
+Dataset
+BraTS (release selected based on available classification labels)
+Input
+T1, T1ce/T1Gd, T2 and FLAIR MRI
+Primary design
+Segmentation-assisted multimodal 3D classification
+Duration
+2 months (8 weeks)
+Framework
+PyTorch + MONAI
+Final output
+Trained model, evaluation, explainability and Streamlit demonstration
+Recommended academic scope: first establish reliable baselines, then implement multimodal attention fusion and explainability.
+1. Recommended Project Definition
+Suggested Title
+MultiModal-BrainNet: Segmentation-Assisted Multimodal Deep Learning for Brain Tumor Classification from BraTS MRI
+Recommended End-to-End Pipeline
+BraTS Dataset
+↓
+Dataset Validation
+↓
+MRI Preprocessing
+↓
+Tumor Localization / Segmentation
+↓
+Tumor ROI Extraction
+↓
+Multimodal Feature Extraction
+↓
+Feature Fusion
+↓
+Brain Tumor Classification
+↓
+Explainable AI
+↓
+Evaluation
+↓
+Web Application / Demonstration
+Classification Target
+MGMT methylated vs. unmethylated if the selected BraTS release provides this official classification label (for example, BraTS 2021).
+HGG vs. LGG only when the chosen BraTS version contains reliable grade labels.
+Another subtype or clinical classification target only when explicitly available and documented in the selected release.
+Important: freeze the classification target before preprocessing and model development because label availability changes across BraTS releases.
+Module A - Dataset Acquisition and Understanding
+Objective: Prepare, index and validate the BraTS dataset.
+Technical Requirements
+Understand patient-level directory organization and unique subject identifiers.
+Identify the MRI modalities: T1, T1ce/T1Gd, T2 and FLAIR.
+Locate segmentation masks and classification labels.
+Understand NIfTI (.nii/.nii.gz), 3D image dimensions, voxel spacing and orientation.
+Create patient-level metadata that maps every modality and label to a single subject.
+Inspect class distribution before any model training.
+Expected Outputs
+dataset_metadata.csv
+Validated raw-data directory
+Data dictionary / label mapping
+Module B - EDA and Data Quality Validation
+Objective: Understand the dataset and detect data-quality problems before model development.
+Technical Requirements
+Count total subjects and subjects per class.
+Detect missing modalities, missing masks and missing labels.
+Detect corrupted or unreadable NIfTI volumes.
+Check image dimensions, voxel spacing and intensity ranges.
+Inspect class imbalance and tumor-volume distribution.
+Visualize representative slices for all modalities and overlay tumor masks.
+Identify extreme cases and document exclusions.
+Expected Outputs
+dataset_summary.csv
+class_distribution figure
+sample multimodal MRI visualization
+tumor_statistics.csv
+EDA/QC report
+Module C - MRI Preprocessing
+Objective: Convert 3D MRI volumes into consistent, leakage-safe model-ready tensors.
+Technical Requirements
+Load NIfTI using NiBabel, MONAI and/or SimpleITK.
+Validate orientation, dimensions and spatial alignment.
+Use non-zero brain voxels for intensity normalization (recommended: z-score).
+Remove excessive background and create tumor-centered or brain-centered crops.
+Resample/resize to a GPU-feasible shape such as 96³ or 128³ when required.
+Perform patient-level train/validation/test splitting (e.g., 70/15/15) with class stratification when possible.
+Never split slices independently; all slices/volumes from one patient must remain in a single split.
+Save preprocessing configuration to make experiments reproducible.
+Expected Outputs
+Processed MRI tensors / cached volumes
+train/validation/test subject lists
+preprocessing_config.yaml
+Module D - Tumor Segmentation / ROI Extraction
+Objective: Focus classification on tumor-relevant tissue and reduce irrelevant background.
+Technical Requirements
+Initial implementation: use BraTS ground-truth mask to compute a tumor bounding box and ROI.
+Final system: optionally replace the ground-truth dependency with an automated segmentation model.
+Recommended segmentation models: 3D U-Net or MONAI SegResNet.
+Preserve a margin around the tumor bounding box to retain peritumoral context.
+Record ROI size, location and tumor volume as optional auxiliary features.
+Ensure the final deployment flow can process MRI without manually supplied ground-truth masks.
+Expected Outputs
+tumor_mask / predicted_mask
+tumor_bounding_box
+tumor_ROI tensors
+ROI metadata
+Module E - Data Augmentation
+Objective: Improve robustness and reduce overfitting while preserving medically plausible anatomy.
+Technical Requirements
+Apply augmentation only to training subjects.
+Use small random rotations, affine transforms, Gaussian noise/smoothing, intensity scaling/shifting and random contrast.
+Use spatial flips only when anatomically and label-wise appropriate.
+Apply transforms consistently across all modalities belonging to the same patient.
+Avoid aggressive transformations that distort tumor morphology.
+Prefer MONAI dictionary transforms for synchronized multimodal augmentation.
+Expected Outputs
+Reproducible augmentation pipeline
+augmentation configuration
+visual QA samples before/after augmentation
+Module F - Baseline Classification
+Objective: Establish strong reference models before claiming improvement from the proposed architecture.
+Technical Requirements
+Baseline 1: 2D CNN/ResNet18 using representative tumor slices.
+Baseline 2: 3D CNN or 3D ResNet using the tumor ROI.
+Baseline 3: single-modality 3D model (for example FLAIR).
+Baseline 4: four-channel multimodal 3D model using T1, T1ce, T2 and FLAIR.
+Use the exact same patient split for all baselines.
+Log training curves and classification metrics for fair comparison.
+Expected Outputs
+Baseline checkpoints
+baseline_results.csv
+comparison table and curves
+Module G - Proposed Multimodal Classification Model
+Objective: Learn modality-specific representations and fuse complementary MRI information.
+Technical Requirements
+Use one modality-specific 3D encoder per MRI sequence.
+Start with 3D ResNet18 encoders; later test DenseNet, EfficientNet, Swin Transformer or MedicalNet-based encoders if resources allow.
+Extract compact feature embeddings from each modality.
+Compare concatenation, learnable weighted fusion and attention-based fusion.
+Feed fused features to a classification head with calibrated probability output.
+Keep architecture modular so individual modalities can be ablated.
+Expected Outputs
+Proposed model implementation
+architecture configuration
+best proposed-model checkpoint
+feature-fusion comparison
+Module H - Training Pipeline
+Objective: Train models reproducibly, safely and efficiently.
+Technical Requirements
+Use patient-level DataLoaders with deterministic seeds.
+Use AdamW and an appropriate learning-rate scheduler.
+Use weighted BCE when binary classes are imbalanced; compare focal loss if required.
+Use early stopping and save best/last checkpoints.
+Enable mixed precision on compatible NVIDIA GPUs.
+Use gradient clipping when training becomes unstable.
+Log loss, metrics, learning rate and epoch duration.
+Persist all hyperparameters in YAML/JSON configuration files.
+Expected Outputs
+best_model.pt
+last_model.pt
+training_history.csv
+config.yaml
+TensorBoard logs
+Module I - Model Evaluation
+Objective: Measure classification performance at patient level using clinically meaningful metrics.
+Technical Requirements
+Report accuracy, precision, recall/sensitivity, specificity, F1-score and ROC-AUC.
+Report PR-AUC when class imbalance is meaningful.
+Generate confusion matrix, ROC curve and precision-recall curve.
+Compare all baselines against the proposed model on the same test split.
+Where feasible, compute 95% confidence intervals using bootstrap resampling.
+Analyze false-positive and false-negative cases instead of reporting only aggregate metrics.
+Expected Outputs
+final_metrics.csv
+confusion_matrix figure
+ROC/PR curves
+error-analysis table
+model comparison table
+Module J - Explainable AI
+Objective: Visualize MRI regions that contributed to the classification decision.
+Technical Requirements
+Use Grad-CAM or Grad-CAM++ adapted to the selected 2D/3D architecture.
+Use occlusion sensitivity as a complementary explanation method when feasible.
+Overlay activation maps on the original MRI and tumor ROI.
+Compare explanations with tumor masks to check whether the model focuses on relevant tissue.
+Export representative correct and incorrect prediction explanations.
+Expected Outputs
+XAI heatmaps
+overlay figures
+case-wise explanation report
+Module K - Ablation Study
+Objective: Quantify which design choices actually contribute to performance.
+Technical Requirements
+Modality ablation: T1 vs T1ce vs T2 vs FLAIR vs all modalities.
+ROI ablation: full brain vs tumor ROI.
+Fusion ablation: concatenation vs weighted fusion vs attention fusion.
+Augmentation ablation: without vs with augmentation.
+Optional segmentation dependency ablation: ground-truth ROI vs predicted ROI if an automated segmenter is implemented.
+Expected Outputs
+ablation_results.csv
+ablation comparison table
+ablation plots
+Module L - Web-Based Demonstration
+Objective: Provide a simple research demonstration of the complete pipeline.
+Technical Requirements
+Use Streamlit for rapid deployment.
+Allow upload/selection of the required MRI modalities.
+Validate that all expected modalities belong to the same case and are readable.
+Run preprocessing and optional segmentation automatically.
+Display classification, probability score and XAI visualization.
+Clearly label the system as a research/educational prototype, not a clinical diagnostic device.
+Expected Outputs
+Streamlit application
+demo screenshots
+deployment instructions
+3. Proposed Multimodal Architecture
+T1 → 3D Encoder
+↓
+T1ce → 3D Encoder
+↓
+T2 → 3D Encoder
+↓
+FLAIR → 3D Encoder
+↓
+Modality Feature Embeddings
+↓
+Multimodal Attention / Weighted Fusion
+↓
+Classification Head
+↓
+Binary Class + Probability
+Implementation note: the four modality encoders execute in parallel. The vertical representation above is used only for clean Word-document visualization.
+4. Baseline and Proposed Model Comparison Plan
+Experiment
+Input
+Model
+Purpose
+B1
+Representative tumor slice
+2D ResNet18
+Simple reference baseline
+B2
+3D tumor ROI
+3D CNN / 3D ResNet
+3D spatial baseline
+B3
+Single MRI modality
+3D ResNet
+Measure single-modality information
+B4
+4-channel MRI volume
+3D CNN / ResNet
+Early-fusion multimodal baseline
+P1
+4 modality-specific ROIs
+4 × 3D encoders + concat
+Late-fusion baseline
+P2
+4 modality-specific ROIs
+4 × 3D encoders + attention
+Recommended proposed model
+5. Required Evaluation Metrics
+Metric
+Why It Is Required
+Accuracy
+Overall classification correctness; should not be used alone.
+Precision
+Measures reliability of positive predictions.
+Recall / Sensitivity
+Measures how many true positive cases are detected.
+Specificity
+Measures correct rejection of negative cases.
+F1-score
+Balances precision and recall.
+ROC-AUC
+Threshold-independent discrimination ability.
+PR-AUC
+Especially useful when classes are imbalanced.
+95% CI (optional)
+Communicates uncertainty in measured test performance.
+6. Minimum Ablation Experiments
+Ablation
+Comparisons
+MRI modality
+T1 / T1ce / T2 / FLAIR / all modalities
+ROI strategy
+Full brain vs tumor ROI
+Fusion
+Concatenation vs learnable weighted fusion vs attention fusion
+Augmentation
+Without augmentation vs with augmentation
+Mask source (optional)
+Ground-truth ROI vs predicted ROI
+7. Two-Month Implementation Schedule
+Week
+Primary Modules
+Implementation Target
+Checkpoint / Deliverable
+Week 1
+A + B
+Dataset setup, metadata, EDA and QC
+Validated metadata + EDA report
+Week 2
+C
+MRI preprocessing and patient-level splitting
+Reusable preprocessing pipeline
+Week 3
+D + E
+ROI extraction, segmentation setup and augmentation
+ROI/augmentation validation samples
+Week 4
+F
+Implement and train baseline classifiers
+Baseline comparison table
+Week 5
+G
+Implement modality-specific encoders and fusion
+Proposed model trains end-to-end
+Week 6
+H + I
+Training optimization and formal evaluation
+Best checkpoint + test metrics
+Week 7
+J + K
+Explainability and ablation experiments
+XAI + ablation results
+Week 8
+L
+Streamlit demo, documentation and final report
+Complete project demonstration
+8. Complete Implementation Flow
+BraTS Dataset
+↓
+Patient-Level Metadata + Label Validation
+↓
+EDA + Data Quality Control
+↓
+T1 / T1ce / T2 / FLAIR Preprocessing
+↓
+Patient-Level Train / Validation / Test Split
+↓
+Tumor Mask / Automated Segmentation
+↓
+Tumor ROI Extraction
+↓
+Synchronized 3D Data Augmentation (Train Only)
+↓
+Baseline Models
+↓
+Modality-Specific 3D Encoders
+↓
+Attention-Based Multimodal Fusion
+↓
+Classification Head
+↓
+Patient-Level Evaluation
+↓
+Explainable AI + Error Analysis
+↓
+Ablation Study
+↓
+Final Model + Streamlit Demonstration
+9. Recommended Technology Stack
+Requirement
+Recommended Technology
+Programming language
+Python
+Deep learning
+PyTorch
+Medical imaging framework
+MONAI
+NIfTI processing
+NiBabel
+Medical image utilities
+SimpleITK
+EDA / tabular processing
+Pandas + NumPy
+Metrics
+Scikit-learn
+Visualization
+Matplotlib
+Experiment tracking
+TensorBoard
+Configuration
+YAML
+Explainability
+Grad-CAM / Grad-CAM++ / occlusion sensitivity
+Demo deployment
+Streamlit
+Compute
+NVIDIA GPU strongly recommended for 3D training
+10. Scope to Freeze for the 2-Month Project
+Recommended frozen scope: BraTS → four MRI modalities → leakage-safe preprocessing → segmentation-assisted tumor ROI → 3D baselines → modality-specific 3D encoders → attention fusion → binary classification → Grad-CAM → ablation study → Streamlit demo.
+Do not add LLM/RAG, federated learning, GAN-based synthesis or multiple external datasets during the initial two months.
+Prioritize reproducibility, patient-level splitting, class-label correctness and fair model comparisons.
+After the 2-month implementation is stable, the project can be extended toward a conference paper with stronger fusion, self-supervised pretraining, uncertainty estimation or external validation.
+11. Final Acceptance Checklist
+☐  Classification target and BraTS release are frozen and documented.
+☐  Every subject has validated modality paths and a correct classification label.
+☐  No patient leakage exists between train, validation and test sets.
+☐  Preprocessing is deterministic for validation/test and reproducible across runs.
+☐  Augmentation is synchronized across modalities and applied only during training.
+☐  At least three baseline models are implemented and compared.
+☐  Proposed multimodal fusion model is trained using the same split as baselines.
+☐  Accuracy, precision, recall, specificity, F1, ROC-AUC and PR-AUC are reported.
+☐  Confusion matrix and ROC/PR curves are generated.
+☐  Grad-CAM/XAI results are generated for representative cases.
+☐  Minimum modality, ROI, fusion and augmentation ablations are completed.
+☐  Best checkpoint, config and training history are preserved.
+☐  Streamlit research demo runs end-to-end.
+☐  Final report explicitly states that the system is a research/educational prototype.

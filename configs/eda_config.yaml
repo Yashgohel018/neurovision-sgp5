@@ -1,0 +1,61 @@
+# ==============================================================================
+# NeuroVision AI: Autonomous MRI Clinical Decision Support System (CDSS)
+# Configuration for Module B: Exploratory Data Analysis & Volumetric QC
+# ==============================================================================
+
+project:
+  name: "NeuroVision AI"
+  subsystem: "Autonomous MRI Clinical Decision Support System"
+  scientific_core: "MultiModal-BrainNet (BraTS 2020)"
+  module: "Module B: Exploratory Data Analysis & Volumetric Quality Control"
+
+inputs:
+  metadata_csv: "data/dataset_metadata.csv"
+
+outputs:
+  tumor_statistics_csv: "data/tumor_statistics.csv"
+  dataset_summary_csv: "data/dataset_summary.csv"
+  figures_dir: "reports/figures"
+  report_markdown: "MODULE_B_EXPLANATION.md"
+
+labels:
+  # BraTS 2020 Ground Truth Voxel Labels
+  background: 0
+  ncr: 1    # Necrotic and Non-Enhancing Tumor Core (NCR/NET)
+  ed: 2     # Peritumoral Vasogenic Edema (ED)
+  et: 4     # GD-Enhancing Tumor (ET)
+
+  # Evaluated Sub-region Composites
+  subregions:
+    wt: [1, 2, 4]  # Whole Tumor (WT) = NCR + ED + ET
+    tc: [1, 4]     # Tumor Core (TC) = NCR + ET
+    et: [4]        # Enhancing Tumor (ET)
+    ed: [2]        # Peritumoral Edema (ED)
+    ncr: [1]       # Necrotic Core (NCR)
+
+outliers:
+  # Clinical edge case thresholds (in cm³)
+  micro_tumor_threshold_cm3: 5.0      # Tumors < 5.0 cm³
+  massive_tumor_threshold_cm3: 150.0  # Massive tumors > 150.0 cm³
+  zero_et_threshold_cm3: 0.0          # Non-enhancing tumors (ET == 0)
+
+intensity_profiling:
+  modalities: ["t1", "t1ce", "t2", "flair"]
+  sample_limit: null  # null = profile all subjects, or int for rapid profiling
+  percentiles: [1, 5, 25, 50, 75, 95, 99]
+
+visualization:
+  dpi: 300
+  style: "seaborn-v0_8-whitegrid"
+  palette:
+    HGG: "#e63946"      # Coral Red for aggressive High-Grade Glioma
+    LGG: "#1d3557"      # Deep Navy for Low-Grade Glioma
+    WT: "#457b9d"       # Whole tumor
+    TC: "#e76f51"       # Tumor core
+    ET: "#f4a261"       # Enhancing tumor
+    ED: "#2a9d8f"       # Edema
+    NCR: "#e63946"      # Necrotic core
+  mask_colors:
+    ncr: [230, 57, 70]   # Red
+    ed: [42, 157, 143]   # Teal / Green
+    et: [244, 162, 97]   # Yellow / Orange

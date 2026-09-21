@@ -1,0 +1,118 @@
+{
+  "project": "NeuroVision AI \u2013 Autonomous MRI Clinical Decision Support System",
+  "dataset_name": "BraTS 2020 Multimodal Brain Tumor Dataset",
+  "clinical_decision_target": {
+    "field": "label",
+    "derived_from": "grade",
+    "encoding": {
+      "0": "Low-Grade Glioma (LGG) - WHO Grade I/II",
+      "1": "High-Grade Glioma (HGG) - WHO Grade III/IV"
+    }
+  },
+  "subsystem_architecture": {
+    "agent_1_medical_analysis": "Responsible for 3D MRI feature extraction, tumor ROI segmentation, volumetric computation, Grad-CAM visual heatmaps, and multimodal vector embeddings.",
+    "agent_2_clinical_decision": "Responsible for integrating MRI findings with patient demographics, querying medical literature via RAG, multi-agent clinical reasoning (LangGraph), and generating evidence-supported clinical reports."
+  },
+  "columns": {
+    "system_identifiers": {
+      "subject_id": {
+        "type": "string",
+        "description": "Unique patient identifier in BraTS 2020 (e.g. BraTS20_Training_001)"
+      },
+      "patient_dir": {
+        "type": "string",
+        "description": "Filesystem directory path containing the patient's MRI sequences"
+      }
+    },
+    "agent_1_imaging_inputs": {
+      "t1_path": {
+        "type": "string",
+        "description": "Path to NIfTI T1-weighted native MRI (anatomical structure)"
+      },
+      "t1ce_path": {
+        "type": "string",
+        "description": "Path to NIfTI T1ce MRI (Gadolinium contrast, vascular tumor core)"
+      },
+      "t2_path": {
+        "type": "string",
+        "description": "Path to NIfTI T2-weighted MRI (fluid-sensitive, peritumoral edema)"
+      },
+      "flair_path": {
+        "type": "string",
+        "description": "Path to NIfTI FLAIR MRI (CSF-attenuated edema delineation)"
+      },
+      "seg_path": {
+        "type": "string",
+        "description": "Path to ground truth segmentation mask (labels: 0, 1, 2, 4)"
+      },
+      "is_complete": {
+        "type": "boolean",
+        "description": "True if all 4 MRI sequences and segmentation mask exist and are valid"
+      },
+      "shape": {
+        "type": "string",
+        "description": "3D matrix dimensions (X, Y, Z voxels), standard: (240, 240, 155)"
+      },
+      "voxel_spacing_mm": {
+        "type": "string",
+        "description": "Physical voxel resolution in mm, standard: (1.0, 1.0, 1.0) isotropic"
+      },
+      "orientation": {
+        "type": "string",
+        "description": "Anatomical coordinate orientation (standard: LPS - Left, Posterior, Superior)"
+      },
+      "data_type": {
+        "type": "string",
+        "description": "Header voxel intensity storage type (e.g., int16)"
+      }
+    },
+    "agent_2_clinical_inputs": {
+      "grade": {
+        "type": "string",
+        "description": "Histopathological diagnosis: 'HGG' (High-Grade Glioma) or 'LGG' (Low-Grade Glioma)"
+      },
+      "label": {
+        "type": "integer",
+        "description": "Binary integer target: 1 for HGG, 0 for LGG"
+      },
+      "age": {
+        "type": "float",
+        "description": "Patient age at diagnosis in years (where documented)"
+      },
+      "survival_days": {
+        "type": "string/float",
+        "description": "Overall survival duration in days from diagnosis"
+      },
+      "extent_of_resection": {
+        "type": "string",
+        "description": "Surgical resection status (e.g., GTR = Gross Total Resection, STR = Subtotal Resection)"
+      },
+      "has_clinical_history": {
+        "type": "boolean",
+        "description": "True if patient has documented clinical survival/demographic covariates"
+      }
+    },
+    "case_retrieval_registry": {
+      "retrieval_eligible": {
+        "type": "boolean",
+        "description": "True if patient has complete imaging and confirmed grade, qualifying for FAISS similarity indexing"
+      },
+      "tcia_id": {
+        "type": "string",
+        "description": "Corresponding Subject ID in The Cancer Imaging Archive (TCIA/TCGA)"
+      },
+      "brats_2019_id": {
+        "type": "string",
+        "description": "Subject identifier in BraTS 2019 challenge cohort"
+      },
+      "brats_2018_id": {
+        "type": "string",
+        "description": "Subject identifier in BraTS 2018 challenge cohort"
+      },
+      "brats_2017_id": {
+        "type": "string",
+        "description": "Subject identifier in BraTS 2017 challenge cohort"
+      }
+    }
+  }
+}

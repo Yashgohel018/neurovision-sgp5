@@ -1,0 +1,64 @@
+# ==============================================================================
+# NeuroVision AI: Autonomous MRI Clinical Decision Support System (CDSS)
+# Configuration for Module A: Multimodal Ingestion, Patient Indexing & Validation
+# ==============================================================================
+
+project:
+  name: "NeuroVision AI"
+  subsystem: "Autonomous MRI Clinical Decision Support System"
+  scientific_core: "MultiModal-BrainNet (BraTS 2020)"
+  architecture: "Two-Agent CDSS (Medical Analysis Agent + Clinical Decision Agent)"
+
+dataset:
+  # Path to BraTS 2020 raw training directory
+  raw_data_dir: "D:/sgp_dataset_NeuroVision/BraTS2020_TrainingData/MICCAI_BraTS2020_TrainingData"
+  
+  # Clinical ground-truth and demographic registries
+  name_mapping_file: "name_mapping.csv"
+  survival_info_file: "survival_info.csv"
+  
+  # Agent 1 (Medical Analysis Agent) Inputs: 4 Multi-sequence MRI modalities + 1 Mask
+  modalities:
+    - "t1"      # T1-weighted native MRI (Anatomical brain map)
+    - "t1ce"    # T1-contrast enhanced (Vascular core & Blood-Brain Barrier disruption)
+    - "t2"      # T2-weighted MRI (Vasogenic edema & fluid signal)
+    - "flair"   # Fluid Attenuated Inversion Recovery (CSF-nulled edema delineation)
+  
+  segmentation_modality: "seg" # Ground truth manual segmentation mask
+
+  # Classification Target (Clinical Decision Agent Target)
+  target_column: "Grade"
+  target_classes:
+    HGG: 1  # High-Grade Glioma (WHO Grade III/IV)
+    LGG: 0  # Low-Grade Glioma (WHO Grade I/II)
+
+  # Agent 2 (Clinical Decision Agent) Demographics & Covariates
+  clinical_fields:
+    - "Age"
+    - "Survival_days"
+    - "Extent_of_Resection"
+    - "Grade"
+
+  # Case-Based Retrieval (FAISS / Historical Case Registry) ID mappings
+  registry_identifiers:
+    - "BraTS_2020_subject_ID"
+    - "TCGA_TCIA_subject_ID"
+    - "BraTS_2019_subject_ID"
+    - "BraTS_2018_subject_ID"
+    - "BraTS_2017_subject_ID"
+
+  # Output paths for processed metadata (relative to learnNeuro root)
+  output_dir: "data"
+  metadata_csv: "data/dataset_metadata.csv"
+  data_dictionary_json: "data/data_dictionary.json"
+
+  # Known dataset naming quirks and exceptions
+  known_anomalies:
+    BraTS20_Training_355:
+      seg: "W39_1998.09.19_Segm.nii"
+
+validation:
+  expected_shape: [240, 240, 155]
+  expected_spacing: [1.0, 1.0, 1.0] # isotropic in mm
+  expected_orientation: "LPS"
+  check_header_only: true  # Read NIfTI headers without loading all voxel arrays for fast indexing
