@@ -1,0 +1,52 @@
+# ==============================================================================
+# NeuroVision AI: Autonomous MRI Clinical Decision Support System (CDSS)
+# Configuration for Module D: 3D Tumor Segmentation & ROI Extraction
+# ==============================================================================
+
+project:
+  name: "NeuroVision AI"
+  subsystem: "Autonomous MRI Clinical Decision Support System"
+  scientific_core: "MultiModal-BrainNet (BraTS 2020)"
+  module: "Module D: 3D Tumor Segmentation & ROI Extraction"
+
+inputs:
+  metadata_csv: "data/dataset_metadata.csv"
+  splits_dir: "data/splits"
+  tumor_statistics_csv: "data/tumor_statistics.csv"
+  processed_dir: "data/processed"
+  prefer_preprocessed: true  # If true, uses Module C normalized tensors if cached, else raw NIfTI
+
+segmentation:
+  mode: "ground_truth"       # Options: "ground_truth", "heuristic_flair", "deep_segmentor"
+  target_labels: [1, 2, 4]   # Whole Tumor (WT) mask indices: 1 (NCR), 2 (ED), 4 (ET)
+  model_checkpoint: null     # Path to trained 3D U-Net / SegResNet weights when mode="deep_segmentor"
+  device: "cpu"              # Inference device: "cpu" or "cuda"
+
+roi_extraction:
+  context_margin_voxels: 10  # Contextual margin (voxels) added to retain peritumoral infiltration zone
+  min_margin_voxels: 6       # Minimum contextual margin
+  target_roi_shape: [96, 96, 96]  # Standardized 3D ROI shape (Depth, Height, Width) for 3D CNNs
+  standardize_method: "pad_or_crop" # Options: "pad_or_crop", "aspect_preserving_fit", "resample"
+  pad_value: 0.0             # Background padding intensity
+  mask_pad_value: 0          # Background padding for integer masks
+  min_tumor_voxels: 10       # Minimum voxels required to consider valid tumor detection
+
+multimodal:
+  modalities: ["t1", "t1ce", "t2", "flair"]
+  channel_order: ["t1", "t1ce", "t2", "flair"]
+  include_seg: true
+
+caching:
+  output_dir: "data/roi_tensors"
+  metadata_output: "data/roi_metadata.csv"
+  save_format: "npz"         # Compressed numpy archives
+  dtype: "float32"
+  mask_dtype: "uint8"
+
+visualization:
+  generate_figures: true
+  figures_dir: "reports/figures"
+  sample_cases: 3
+
+documentation:
+  explanation_file: "MODULE_D_EXPLANATION.md"

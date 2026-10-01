@@ -96,6 +96,14 @@ For complete architectural details, see [NEUROVISION_SYSTEM_ARCHITECTURE.md](NEU
 - **Nearest-Neighbor Mask Resampling**: Preserves categorical ground truth labels $\{0, 1, 2, 4\}$ without spurious fractional artifacts.
 - Comprehensive documentation: [MODULE_C_EXPLANATION.md](MODULE_C_EXPLANATION.md)
 
+### 🎯 Module D: 3D Tumor Segmentation & Focused ROI Extraction
+- **Autonomous 3D Bounding Box Detection**: Detects tight spatial envelopes enclosing Whole Tumor ($WT \ge 1$) pathology.
+- **Peritumoral Infiltration Context Margin**: Expands bounding envelope by $+10$ voxels symmetrically with strict boundary clamping to preserve microscopic infiltration zones.
+- **Aspect-Preserving Spatial Standardization**: Standardizes variable-sized tumor envelopes into uniform $4 \times 96 \times 96 \times 96$ tensors (`pad_or_crop`) preserving $1:1:1$ physical spatial resolution.
+- **Dual-Mode Clinical Architecture**: Seamlessly switches between expert ground-truth masks (training/validation) and automated segmentation interfaces (`DeepTumorSegmentor` / `HeuristicFLAIRSegmentor`) for zero-label clinical inference.
+- **Morphometric Metadata Compilation**: Exports `data/roi_metadata.csv` recording 3D centroids, bounding spans, and sub-region ratios ($ET/WT, TC/WT, ED/WT$).
+- Comprehensive documentation: [MODULE_D_EXPLANATION.md](MODULE_D_EXPLANATION.md)
+
 ---
 
 ## 📈 Analysis & Visualizations
@@ -109,6 +117,8 @@ The pipeline automatically generates high-resolution figures in `reports/figures
 | `modality_intensity_distributions.png` | Sequence-wise pixel intensity distributions comparing skull-stripped regions |
 | `tumor_volume_distributions.png` | Log-scale volume distributions of ET, TC, and WT across tumor grades |
 | `correlation_matrix.png` | Correlation heatmaps between tumor sub-region volumes and clinical attributes |
+| `roi_extraction_{subject_id}.png` | 4-panel comparison: Full Brain FLAIR, T1ce with context margin, Standardized 3D ROI, and Multi-class Mask |
+| `roi_spatial_distribution.png` | Cohort boxplots of tumor spans (Z, Y, X), tumor-to-brain fractions, and spatial centroid scatter |
 
 ---
 
@@ -119,12 +129,16 @@ learnNeuro/
 ├── configs/                          # Pipeline configuration files (YAML)
 │   ├── dataset_config.yaml           # Module A configuration (paths, sequences, validation rules)
 │   ├── eda_config.yaml               # Module B configuration (metrics, figure settings, thresholds)
-│   └── preprocessing_config.yaml     # Module C configuration (splits, normalization, shapes)
+│   ├── preprocessing_config.yaml     # Module C configuration (splits, normalization, shapes)
+│   └── roi_config.yaml               # Module D configuration (margins, target ROI shape, segmentors)
 ├── data/                             # Generated metadata, splits and data dictionaries
 │   ├── data_dictionary.json          # Schema definitions and data types
 │   ├── dataset_metadata.csv          # Per-case sequence paths, dimensions, voxel spacings
 │   ├── dataset_summary.csv           # Aggregate dataset metrics and validation flags
 │   ├── tumor_statistics.csv          # Sub-region volumetric and intensity statistics
+│   ├── roi_metadata.csv              # 3D bounding spans, centroids, and tumor/brain ratios
+│   ├── roi_tensors/                  # Standardized 3D ROI tensors (4, 96, 96, 96)
+│   ├── processed/                    # Standardized whole-brain tensors (4, 128, 128, 128)
 │   └── splits/                       # Zero-leakage patient-level stratified partitions
 │       ├── train_subjects.csv        # 258 training subjects (79.5% HGG, 20.5% LGG)
 │       ├── val_subjects.csv          # 55 validation subjects (80.0% HGG, 20.0% LGG)
@@ -138,19 +152,23 @@ learnNeuro/
 ├── scripts/                          # Entry-point execution scripts
 │   ├── run_module_a.py               # Run dataset indexing and validation pipeline
 │   ├── run_module_b.py               # Run exploratory data analysis and QC pipeline
-│   └── run_module_c.py               # Run MRI preprocessing & patient splitting pipeline
+│   ├── run_module_c.py               # Run MRI preprocessing & patient splitting pipeline
+│   └── run_module_d.py               # Run 3D tumor segmentation & ROI extraction pipeline
 ├── src/                              # Source package modules
 │   ├── module_a_dataset/             # Indexing, NIfTI utilities, integrity validators
 │   ├── module_b_eda/                 # Volumetrics, intensity profiler, statistical analyzer, visualizer
 │   ├── module_c_preprocessing/       # Normalizer, spatial cropper, patient splitter, preprocessor
+│   ├── module_d_roi/                 # Bounding box extractor, ROI cropper, segmentor adapters, metadata
 │   └── utils/                        # Logging and general helpers
 ├── tests/                            # Unit and integration test suites
 │   ├── test_module_a.py
 │   ├── test_module_b.py
-│   └── test_module_c.py
+│   ├── test_module_c.py
+│   └── test_module_d.py
 ├── MODULE_A_EXPLANATION.md           # Deep-dive theoretical and technical guide for Module A
 ├── MODULE_B_EXPLANATION.md           # Deep-dive theoretical and technical guide for Module B
 ├── MODULE_C_EXPLANATION.md           # Deep-dive theoretical and technical guide for Module C
+├── MODULE_D_EXPLANATION.md           # Deep-dive theoretical and technical guide for Module D
 ├── NEUROVISION_SYSTEM_ARCHITECTURE.md# Complete system architecture specification
 ├── requirements.txt                  # Python dependencies
 └── README.md                         # Project overview and quickstart
@@ -189,7 +207,12 @@ python scripts/run_module_b.py --config configs/eda_config.yaml
 python scripts/run_module_c.py --config configs/preprocessing_config.yaml
 ```
 
-### 5. Run Automated Test Suite
+### 5. Run Module D (3D Tumor Segmentation & ROI Extraction)
+```bash
+python scripts/run_module_d.py --config configs/roi_config.yaml
+```
+
+### 6. Run Automated Test Suite
 ```bash
 python -m unittest discover -s tests
 ```
@@ -201,7 +224,7 @@ python -m unittest discover -s tests
 - [x] **Module A**: Dataset Indexing, Path Discovery & Integrity Verification
 - [x] **Module B**: Exploratory Data Analysis (EDA) & Volumetric Quality Control
 - [x] **Module C**: Voxel Intensity Normalization & Zero-Leakage Patient Splitting
-- [ ] **Module D**: 3D ROI Cropping & Foreground Mask Extraction
+- [x] **Module D**: 3D ROI Cropping & Foreground Mask Extraction
 - [ ] **Module E**: Multimodal 3D Data Loader with Elastic/Spatial Augmentations
 - [ ] **Module F**: 3D ResNet Baseline Classifier
 - [ ] **Module G**: Multimodal Parallel-Branch Fusion Network
