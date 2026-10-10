@@ -54,6 +54,9 @@ export default function InteractiveWorkstation({
   const [overlay, setOverlay] = useState<'none' | 'seg' | 'cam'>('seg')
   const [opacity, setOpacity] = useState(0.65)
   const [zoom, setZoom] = useState(1.0)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [isPanning, setIsPanning] = useState(false)
+  const panStartRef = useRef({ x: 0, y: 0 })
   const [brightness, setBrightness] = useState(100)
   const [contrast, setContrast] = useState(100)
   const [showCrosshair, setShowCrosshair] = useState(true)
@@ -74,6 +77,19 @@ export default function InteractiveWorkstation({
   useEffect(() => {
     setImageError(false)
   }, [currentSrc])
+
+  // Mouse wheel zoom listener directly inside viewer
+  useEffect(() => {
+    const el = viewerRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const factor = e.deltaY < 0 ? 1.15 : 0.87
+      setZoom((prev) => Math.max(0.8, Math.min(6.0, Math.round(prev * factor * 10) / 10)))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
 
   // Fallback synthetic high-res MRI rendering if offline or image fails
   useEffect(() => {
@@ -142,15 +158,33 @@ export default function InteractiveWorkstation({
   }, [imageError, modality, plane, index, overlay, opacity])
 
   const handleViewerClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!viewerRef.current) return
+    if (!viewerRef.current || isPanning) return
     const rect = viewerRef.current.getBoundingClientRect()
     const x = Math.round(e.clientX - rect.left)
     const y = Math.round(e.clientY - rect.top)
     setCrosshairPos({ x, y })
   }
 
+  const handlePointerDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (zoom > 1.0 || e.button === 1 || e.button === 2) {
+      setIsPanning(true)
+      panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y }
+    }
+  }
+
+  const handlePointerMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (isPanning) {
+      setPan({ x: e.clientX - panStartRef.current.x, y: e.clientY - panStartRef.current.y })
+    }
+  }
+
+  const handlePointerUp = () => {
+    setIsPanning(false)
+  }
+
   const handleResetAdjustments = () => {
     setZoom(1.0)
+    setPan({ x: 0, y: 0 })
     setBrightness(100)
     setContrast(100)
     setOpacity(0.65)
@@ -243,7 +277,13 @@ export default function InteractiveWorkstation({
           <div
             ref={viewerRef}
             onClick={handleViewerClick}
-            className="group relative aspect-square w-full max-w-[540px] cursor-crosshair overflow-hidden rounded-2xl border border-nv-line bg-black shadow-2xl"
+            onMouseDown={handlePointerDown}
+            onMouseMove={handlePointerMove}
+            onMouseUp={handlePointerUp}
+            onMouseLeave={handlePointerUp}
+            className={`group relative aspect-square w-full max-w-[540px] overflow-hidden rounded-2xl border border-nv-line bg-black shadow-2xl ${
+              zoom > 1.0 ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-crosshair'
+            }`}
           >
             {/* Image Slice */}
             {!imageError ? (
@@ -254,7 +294,8 @@ export default function InteractiveWorkstation({
                 decoding="async"
                 onError={() => setImageError(true)}
                 style={{
-                  transform: `scale(${zoom})`,
+                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                  transformOrigin: 'center center',
                   filter: `brightness(${brightness}%) contrast(${contrast}%)`,
                 }}
                 className="h-full w-full object-contain transition-transform duration-75 select-none"
@@ -265,7 +306,8 @@ export default function InteractiveWorkstation({
                 width={320}
                 height={320}
                 style={{
-                  transform: `scale(${zoom})`,
+                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                  transformOrigin: 'center center',
                   filter: `brightness(${brightness}%) contrast(${contrast}%)`,
                 }}
                 className="h-full w-full object-contain"
@@ -422,30 +464,91 @@ export default function InteractiveWorkstation({
             </div>
           </div>
 
-          {/* Zoom and Crosshair Tools */}
-          <div className="flex items-center gap-2 pt-2">
-            <button
-              onClick={() => setZoom(Math.max(0.7, zoom - 0.2))}
-              className="flex-1 flex items-center justify-center gap-1 rounded-lg border border-nv-line bg-black/40 py-2 text-xs text-zinc-300 hover:text-white"
-            >
-              <ZoomOut className="h-3.5 w-3.5" /> Out
-            </button>
-            <button
-              onClick={() => setZoom(Math.min(2.5, zoom + 0.2))}
-              className="flex-1 flex items-center justify-center gap-1 rounded-lg border border-nv-line bg-black/40 py-2 text-xs text-zinc-300 hover:text-white"
-            >
-              <ZoomIn className="h-3.5 w-3.5" /> In
-            </button>
-            <button
-              onClick={() => setShowCrosshair(!showCrosshair)}
-              className={`rounded-lg border p-2 transition-colors ${
-                showCrosshair
-                  ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300'
-                  : 'border-nv-line bg-black/40 text-zinc-500'
-              }`}
-            >
-              <Crosshair className="h-4 w-4" />
-            </button>
+          {/* Advanced Zoom and Pan Inspection Tools */}
+          <div className="space-y-2 pt-2 border-t border-nv-line/50">
+            <div className="flex justify-between items-center text-xs text-zinc-400">
+              <span className="font-semibold text-zinc-200">Slice Magnification</span>
+              <span className="font-mono text-cyan-300 font-bold bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-500/30">
+                {Math.round(zoom * 100)}% ({zoom.toFixed(1)}x)
+              </span>
+            </div>
+
+            <input
+              type="range"
+              min={0.8}
+              max={6.0}
+              step={0.1}
+              value={zoom}
+              onChange={(e) => setZoom(Number(e.target.value))}
+              className="w-full accent-cyan-400 cursor-pointer h-1.5 rounded-lg bg-zinc-700"
+              aria-label="Slice Magnification Level"
+            />
+
+            {/* Quick Zoom Presets */}
+            <div className="grid grid-cols-5 gap-1 pt-1">
+              {[
+                { label: '1x', val: 1.0 },
+                { label: '1.5x', val: 1.5 },
+                { label: '2.5x', val: 2.5 },
+                { label: '4x', val: 4.0 },
+                { label: '6x', val: 6.0 },
+              ].map((p) => (
+                <button
+                  key={p.label}
+                  onClick={() => setZoom(p.val)}
+                  className={`rounded-md py-1 text-[11px] font-mono transition-colors ${
+                    Math.abs(zoom - p.val) < 0.25
+                      ? 'bg-cyan-500/25 text-cyan-300 border border-cyan-500/40'
+                      : 'bg-white/5 text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                onClick={() => setZoom((z) => Math.max(0.8, Math.round((z - 0.3) * 10) / 10))}
+                className="flex-1 flex items-center justify-center gap-1 rounded-lg border border-nv-line bg-black/40 py-1.5 text-xs text-zinc-300 hover:text-white"
+              >
+                <ZoomOut className="h-3.5 w-3.5" /> Out
+              </button>
+              <button
+                onClick={() => setZoom((z) => Math.min(6.0, Math.round((z + 0.3) * 10) / 10))}
+                className="flex-1 flex items-center justify-center gap-1 rounded-lg border border-nv-line bg-black/40 py-1.5 text-xs text-zinc-300 hover:text-white"
+              >
+                <ZoomIn className="h-3.5 w-3.5" /> In
+              </button>
+
+              {(pan.x !== 0 || pan.y !== 0) && (
+                <button
+                  onClick={() => setPan({ x: 0, y: 0 })}
+                  title="Recenter Slice Position"
+                  className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2 py-1.5 text-[11px] text-cyan-300 hover:bg-cyan-500/20"
+                >
+                  Recenter
+                </button>
+              )}
+
+              <button
+                onClick={() => setShowCrosshair(!showCrosshair)}
+                title="Toggle Target Crosshair"
+                className={`rounded-lg border p-1.5 transition-colors ${
+                  showCrosshair
+                    ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300'
+                    : 'border-nv-line bg-black/40 text-zinc-500'
+                }`}
+              >
+                <Crosshair className="h-4 w-4" />
+              </button>
+            </div>
+
+            {zoom > 1.0 && (
+              <p className="text-[10px] text-zinc-500 font-mono text-center pt-0.5">
+                Drag slice to pan · Scroll wheel to zoom
+              </p>
+            )}
           </div>
 
           {/* Sub-region Color Key (when overlay is seg) */}

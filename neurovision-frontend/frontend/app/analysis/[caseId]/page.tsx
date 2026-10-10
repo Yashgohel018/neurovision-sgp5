@@ -205,7 +205,7 @@ export default function Analysis() {
                 initialIndex={67}
               />
             ) : (
-              <ThreeBrainScene height="600px" />
+              <ThreeBrainScene height="640px" initialCaseId={caseId} />
             )}
 
             {/* BOTTOM: MRI Modality Synchronized Quick Strip */}
