@@ -1,0 +1,8 @@
+model_id,model_name,roc_auc,accuracy,sensitivity,specificity,f1_score,pr_auc,auc_ci_lower,auc_ci_upper,acc_ci_lower,acc_ci_upper,tp,tn,fp,fn
+B1,B1: 2D Slice ResNet18,1.0,0.9464,1.0,0.75,0.967,1.0,1.0,1.0,0.875,0.9821,44,9,3,0
+B2,B2: 3D CNN Tumor ROI,0.9962,0.9643,1.0,0.8333,0.9778,0.999,0.9848,1.0,0.9013,1.0,44,10,2,0
+B3,B3: 3D Single-Modality (FLAIR),0.8504,0.875,1.0,0.4167,0.9263,0.939,0.6958,0.9822,0.7942,0.9464,44,5,7,0
+B4,B4: 4-Channel Early Fusion 3D,0.9943,0.9286,1.0,0.6667,0.9565,0.9985,0.9786,1.0,0.8656,0.9821,44,8,4,0
+BM,BM: Clinical MorphNet Ensemble,0.9527,0.9286,1.0,0.6667,0.9565,0.9856,0.8908,0.9973,0.8656,0.9821,44,8,4,0
+P1,P1: MultiModal-BrainNet (Concat),0.9962,0.9286,1.0,0.6667,0.9565,0.999,0.9848,1.0,0.8656,0.9821,44,8,4,0
+P2,P2: MultiModal-BrainNet (Attention),0.9886,0.9286,1.0,0.6667,0.9565,0.997,0.9668,1.0,0.8656,0.9821,44,8,4,0

@@ -1,0 +1,60 @@
+# ==============================================================================
+# NeuroVision AI: Autonomous MRI Clinical Decision Support System (CDSS)
+# Configuration for Module E: Synchronized Multimodal 3D Data Augmentation
+# ==============================================================================
+
+project:
+  name: "NeuroVision AI"
+  subsystem: "Autonomous MRI Clinical Decision Support System"
+  scientific_core: "MultiModal-BrainNet (BraTS 2020)"
+  module: "Module E: Synchronized Multimodal 3D Data Augmentation"
+
+scope:
+  train_only: true               # Strictly enforce augmentation only on train split
+  preserve_patient_split: true   # Maintain patient-level isolation
+
+transforms:
+  spatial:
+    random_flip_sagittal:
+      enabled: true
+      probability: 0.5
+    random_rotation_3d:
+      enabled: true
+      probability: 0.6
+      max_angle_degrees: 10.0   # Conservative rotation to preserve anatomical validity
+    random_affine:
+      enabled: true
+      probability: 0.4
+      scale_range: [0.95, 1.05]
+      shear_range: [-0.02, 0.02]
+
+  intensity:
+    gaussian_noise:
+      enabled: true
+      probability: 0.5
+      mean: 0.0
+      std: 0.02
+    intensity_scaling:
+      enabled: true
+      probability: 0.5
+      factor_range: [0.90, 1.10]
+    random_contrast:
+      enabled: true
+      probability: 0.4
+      gamma_range: [0.85, 1.15]
+
+multimodal:
+  modalities: ["t1", "t1ce", "t2", "flair"]
+  synchronized_spatial: true    # Apply identical spatial transforms to all 4 modalities and mask
+
+caching:
+  output_dir: "data/augmented_samples"
+  sample_cases: 3
+
+visualization:
+  generate_qa_figure: true
+  figures_dir: "reports/figures"
+  figure_filename: "augmentation_samples.png"
+
+documentation:
+  explanation_file: "MODULE_E_EXPLANATION.md"

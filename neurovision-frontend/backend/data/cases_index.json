@@ -1,0 +1,70 @@
+[
+  {
+    "case_id": "CASE-2026-0005",
+    "created_at": "2026-10-09T04:12:11.017711+00:00",
+    "modalities": [],
+    "status": "pending",
+    "model_version": null,
+    "is_demo": false,
+    "grade": null,
+    "age": null,
+    "survival_days": null,
+    "extent_of_resection": null,
+    "split": null,
+    "is_real_brats": false,
+    "slice_count": 155
+  },
+  {
+    "case_id": "CASE-2026-0005",
+    "created_at": "2026-10-07T16:48:44.989571+00:00",
+    "modalities": [],
+    "status": "pending",
+    "model_version": null,
+    "is_demo": false,
+    "grade": null,
+    "age": null,
+    "survival_days": null,
+    "extent_of_resection": null,
+    "split": null,
+    "is_real_brats": false,
+    "slice_count": 155
+  },
+  {
+    "case_id": "CASE-2026-001",
+    "created_at": "2026-10-06T09:30:00Z",
+    "modalities": [
+      "T1",
+      "T1ce",
+      "T2",
+      "FLAIR",
+      "Seg"
+    ],
+    "status": "ready",
+    "model_version": "ResNet3D-v1.0",
+    "is_demo": false
+  },
+  {
+    "case_id": "CASE-2026-002",
+    "created_at": "2026-10-06T14:15:00Z",
+    "modalities": [
+      "T1",
+      "T1ce",
+      "T2",
+      "FLAIR"
+    ],
+    "status": "ready",
+    "model_version": null,
+    "is_demo": false
+  },
+  {
+    "case_id": "CASE-2026-003",
+    "created_at": "2026-10-07T08:00:00Z",
+    "modalities": [
+      "T1",
+      "FLAIR"
+    ],
+    "status": "pending",
+    "model_version": null,
+    "is_demo": false
+  }
+]

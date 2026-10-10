@@ -1,0 +1,24 @@
+# ==============================================================================
+# NeuroVision AI: Autonomous MRI Clinical Decision Support System (CDSS)
+# Configuration for Module G: MultiModal-BrainNet (BraTS 2020)
+# ==============================================================================
+
+model:
+  title: "MultiModal-BrainNet"
+  variant: "P2: Multimodal Attention Fusion"
+  modalities: ["t1", "t1ce", "t2", "flair"]
+  base_filters: 16
+  embedding_dim: 64
+  dropout: 0.3
+  fusion_type: "attention"   # "attention" (P2) or "concat" (P1)
+  num_classes: 1
+  task: "binary_classification"  # HGG (1) vs LGG (0)
+
+training:
+  batch_size: 4
+  learning_rate: 0.0003
+  weight_decay: 0.01
+  pos_weight: 0.26           # Reciprocal of HGG/LGG class imbalance (76 LGG / 293 HGG)
+  epochs: 30
+  early_stopping_patience: 7
+  seed: 42

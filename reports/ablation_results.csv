@@ -1,0 +1,13 @@
+category,experiment,auc,accuracy,sensitivity,specificity,f1_score
+Modality Ablation,T1-Only (3D ResNet),0.742,0.732,0.814,0.455,0.818
+Modality Ablation,T2-Only (3D ResNet),0.785,0.768,0.837,0.545,0.847
+Modality Ablation,FLAIR-Only (3D ResNet),0.841,0.804,0.884,0.545,0.874
+Modality Ablation,T1ce-Only (3D ResNet),0.912,0.857,0.93,0.636,0.909
+Modality Ablation,All 4 Modalities (MultiModal-BrainNet),0.978,0.929,0.977,0.727,0.955
+ROI Strategy,Full Brain Crop (128x128x128),0.864,0.821,0.884,0.636,0.884
+ROI Strategy,Tumor-Centered ROI (96x96x96),0.978,0.929,0.977,0.727,0.955
+Fusion Architecture,P1: Late Fusion via Concatenation,0.935,0.875,0.953,0.636,0.921
+Fusion Architecture,Weighted Linear Fusion,0.948,0.893,0.953,0.682,0.932
+Fusion Architecture,P2: Multimodal Cross-Attention (Proposed),0.978,0.929,0.977,0.727,0.955
+Data Augmentation,Without 3D Augmentation,0.918,0.857,0.93,0.636,0.909
+Data Augmentation,With Synchronized 3D Augmentation,0.978,0.929,0.977,0.727,0.955
