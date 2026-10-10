@@ -8,6 +8,7 @@ from app.schemas.case import CaseSummary, CreateCaseResponse, DeleteCaseResponse
 from app.services.case_service import case_service
 from app.services.nifti_service import nifti_service
 from app.services.volumetry_service import volumetry_service
+from app.services.geometry_service import geometry_service
 from app.config import CASES_DIR
 
 router = APIRouter()
@@ -113,3 +114,7 @@ def get_volume(case_id: str):
     if not v:
         raise HTTPException(status_code=404, detail="No segmentation mask available for volumetric quantification.")
     return v
+
+@router.get("/api/cases/{case_id}/geometry3d")
+def get_geometry_3d(case_id: str):
+    return geometry_service.get_case_geometry_3d(case_id)

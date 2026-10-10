@@ -1,31 +1,50 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
-import { RotateCw, ZoomIn, ZoomOut, Maximize2, Layers, Compass, Focus } from 'lucide-react'
+import {
+  RotateCw,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  Layers,
+  Compass,
+  Focus,
+  Activity,
+  CheckCircle2,
+  Box,
+  ChevronDown
+} from 'lucide-react'
+import { api } from '@/lib/api'
+import type { BrainGeometry3D } from '@/lib/types'
 
 interface ThreeBrainSceneProps {
   className?: string
   height?: string
   autoRotateInit?: boolean
+  initialCaseId?: string
 }
 
 export default function ThreeBrainScene({
   className = '',
-  height = '600px',
+  height = '620px',
   autoRotateInit = true,
+  initialCaseId = 'CASE-2026-001',
 }: ThreeBrainSceneProps) {
   const mountRef = useRef<HTMLDivElement>(null)
-  const [autoRotate, setAutoRotate] = useState(autoRotateInit)
-  const [showBrain, setShowBrain] = useState(true)
-  const [showTumor, setShowTumor] = useState(true)
-  const [showEdema, setShowEdema] = useState(true)
-  const [showNecrotic, setShowNecrotic] = useState(true)
-  const [showROI, setShowROI] = useState(true)
-  const [showPlanes, setShowPlanes] = useState(false)
-  const [cameraDistance, setCameraDistance] = useState(6.2)
+  const [selectedCase, setSelectedCase] = useState<string>(initialCaseId)
+  const [geometryData, setGeometryData] = useState<BrainGeometry3D | null>(null)
+  const [loading, setLoading] = useState<boolean>(true)
+  const [autoRotate, setAutoRotate] = useState<boolean>(autoRotateInit)
+  const [showBrain, setShowBrain] = useState<boolean>(true)
+  const [showTumor, setShowTumor] = useState<boolean>(true)
+  const [showEdema, setShowEdema] = useState<boolean>(true)
+  const [showNecrotic, setShowNecrotic] = useState<boolean>(true)
+  const [showROI, setShowROI] = useState<boolean>(true)
+  const [showPlanes, setShowPlanes] = useState<boolean>(false)
+  const [cameraDistance, setCameraDistance] = useState<number>(6.2)
 
-  // Object references for instant toggle without re-instantiating scene
+  // Object references for instant toggle and dynamic geometry swapping
   const sceneRef = useRef<THREE.Scene | null>(null)
   const brainGroupRef = useRef<THREE.Group | null>(null)
   const tumorGroupRef = useRef<THREE.Group | null>(null)
@@ -36,24 +55,119 @@ export default function ThreeBrainScene({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const mainGroupRef = useRef<THREE.Group | null>(null)
+  const isDraggingRef = useRef<boolean>(false)
 
+  // 1. Fetch real patient 3D geometry from FastAPI backend
+  const fetchGeometry = useCallback(async (caseId: string) => {
+    setLoading(true)
+    try {
+      const data = await api.geometry3d(caseId)
+      setGeometryData(data)
+    } catch {
+      // Graceful fallback to anatomical reference if offline
+      setGeometryData(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchGeometry(selectedCase)
+  }, [selectedCase, fetchGeometry])
+
+  // Helper to build a Three.js mesh from vertex and face index arrays
+  const buildMeshFromData = (
+    vertices: [number, number, number][],
+    faces: [number, number, number][],
+    material: THREE.Material,
+    renderOrder = 0
+  ): THREE.Mesh => {
+    const geom = new THREE.BufferGeometry()
+    const pos = new Float32Array(vertices.length * 3)
+    for (let i = 0; i < vertices.length; i++) {
+      pos[i * 3] = vertices[i][0]
+      pos[i * 3 + 1] = vertices[i][1]
+      pos[i * 3 + 2] = vertices[i][2]
+    }
+    geom.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+
+    const idx = new Uint32Array(faces.length * 3)
+    for (let i = 0; i < faces.length; i++) {
+      idx[i * 3] = faces[i][0]
+      idx[i * 3 + 1] = faces[i][1]
+      idx[i * 3 + 2] = faces[i][2]
+    }
+    geom.setIndex(new THREE.BufferAttribute(idx, 1))
+    geom.computeVertexNormals()
+
+    const mesh = new THREE.Mesh(geom, material)
+    mesh.renderOrder = renderOrder
+    return mesh
+  }
+
+  // Helper to build realistic anatomical point cloud
+  const buildPointCloudFromData = (points: [number, number, number][]): THREE.Points => {
+    const geom = new THREE.BufferGeometry()
+    const pos = new Float32Array(points.length * 3)
+    const col = new Float32Array(points.length * 3)
+
+    for (let i = 0; i < points.length; i++) {
+      pos[i * 3] = points[i][0]
+      pos[i * 3 + 1] = points[i][1]
+      pos[i * 3 + 2] = points[i][2]
+
+      // Height gradient: Top dorsal cortex cyan/azure, base deeper blue
+      const t = Math.min(1, Math.max(0, (points[i][1] + 1.2) / 2.4))
+      col[i * 3] = THREE.MathUtils.lerp(0.08, 0.28, t)
+      col[i * 3 + 1] = THREE.MathUtils.lerp(0.35, 0.88, t)
+      col[i * 3 + 2] = THREE.MathUtils.lerp(0.75, 1.0, t)
+    }
+
+    geom.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    geom.setAttribute('color', new THREE.BufferAttribute(col, 3))
+
+    const pCanvas = document.createElement('canvas')
+    pCanvas.width = pCanvas.height = 32
+    const pCtx = pCanvas.getContext('2d')
+    if (pCtx) {
+      const grad = pCtx.createRadialGradient(16, 16, 0, 16, 16, 16)
+      grad.addColorStop(0, '#ffffff')
+      grad.addColorStop(0.35, '#38bdf8dd')
+      grad.addColorStop(0.7, '#0284c755')
+      grad.addColorStop(1, 'transparent')
+      pCtx.fillStyle = grad
+      pCtx.fillRect(0, 0, 32, 32)
+    }
+
+    const pTexture = new THREE.CanvasTexture(pCanvas)
+    const mat = new THREE.PointsMaterial({
+      size: 0.05,
+      vertexColors: true,
+      map: pTexture,
+      transparent: true,
+      opacity: 0.72,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+
+    return new THREE.Points(geom, mat)
+  }
+
+  // 2. Main Three.js Scene Setup & Re-hydration
   useEffect(() => {
     const container = mountRef.current
     if (!container) return
 
-    // Clean any prior canvas
     while (container.firstChild) {
       container.removeChild(container.firstChild)
     }
 
-    // 1. Scene setup
     const scene = new THREE.Scene()
     sceneRef.current = scene
 
     const width = Math.max(container.clientWidth || 800, 320)
     const heightPx = Math.max(container.clientHeight || 600, 320)
 
-    // Perspective camera properly centered at world origin
     const camera = new THREE.PerspectiveCamera(40, width / heightPx, 0.1, 100)
     camera.position.set(0, 0.8, 6.2)
     camera.lookAt(0, 0.1, 0)
@@ -72,268 +186,291 @@ export default function ThreeBrainScene({
     container.appendChild(renderer.domElement)
     rendererRef.current = renderer
 
-    // Master group centered vertically and horizontally
     const mainGroup = new THREE.Group()
     mainGroup.position.set(0, 0.05, 0)
     scene.add(mainGroup)
     mainGroupRef.current = mainGroup
 
-    // =========================================================================
-    // 2. Anatomically Modeled Dual-Hemisphere Brain Cortex Point Cloud
-    // =========================================================================
+    // Groups for layers
     const brainGroup = new THREE.Group()
+    const tumorGroup = new THREE.Group()
+    const edemaGroup = new THREE.Group()
+    const necroticGroup = new THREE.Group()
+    const roiBoxGroup = new THREE.Group()
+    const planesGroup = new THREE.Group()
+
     mainGroup.add(brainGroup)
+    mainGroup.add(edemaGroup)
+    mainGroup.add(tumorGroup)
+    mainGroup.add(necroticGroup)
+    mainGroup.add(roiBoxGroup)
+    mainGroup.add(planesGroup)
+
     brainGroupRef.current = brainGroup
+    tumorGroupRef.current = tumorGroup
+    edemaGroupRef.current = edemaGroup
+    necroticGroupRef.current = necroticGroup
+    roiBoxRef.current = roiBoxGroup
+    planesGroupRef.current = planesGroup
 
-    const N_POINTS = 11000
-    const positions = new Float32Array(N_POINTS * 3)
-    const colors = new Float32Array(N_POINTS * 3)
+    let tumorCenter = new THREE.Vector3(0.45, 0.22, 0.32)
 
-    let pIdx = 0
-    while (pIdx < N_POINTS) {
-      // Generate spherical coordinates with hemispheric longitudinal fissure
-      const u = Math.random() * 2 - 1
-      const theta = Math.random() * 2 * Math.PI
-      const r0 = Math.sqrt(Math.max(0, 1 - u * u))
+    // =========================================================================
+    // Real Data Mesh Construction (or Biomechanical Fallback)
+    // =========================================================================
+    if (geometryData && geometryData.is_real_data && geometryData.brain.vertices.length > 0) {
+      // 1. True Anatomical Brain Surface & Cortical Point Cloud from Real MRI
+      const brainMat = new THREE.MeshStandardMaterial({
+        color: 0x0284c7,
+        emissive: 0x082f49,
+        emissiveIntensity: 0.18,
+        roughness: 0.7,
+        metalness: 0.1,
+        transparent: true,
+        opacity: 0.12,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      })
+      const brainMesh = buildMeshFromData(
+        geometryData.brain.vertices,
+        geometryData.brain.faces,
+        brainMat,
+        0
+      )
+      brainGroup.add(brainMesh)
 
-      let x = r0 * Math.cos(theta)
-      let y = u
-      let z = r0 * Math.sin(theta)
-
-      // Anatomic brain scaling:
-      // X = lateral/width (1.35), Y = vertical/height (1.05), Z = anterior-posterior/depth (1.55)
-      let sx = x * 1.35
-      let sy = y * 1.05
-      let sz = z * 1.55
-
-      // Add interhemispheric longitudinal fissure (groove between left & right hemispheres)
-      const hemiSign = Math.sign(sx) || 1
-      const fissureGap = 0.07 * Math.exp(-Math.pow(sx * 4, 2))
-      sx += hemiSign * fissureGap
-
-      // Flatten inferior base (ventral skull base) and round dorsal cortex
-      if (sy < -0.4) {
-        sy = sy * 0.75 - 0.1
+      // Point cloud from true cortex surface
+      if (geometryData.brain.point_cloud && geometryData.brain.point_cloud.length > 0) {
+        const brainPoints = buildPointCloudFromData(geometryData.brain.point_cloud)
+        brainGroup.add(brainPoints)
       }
 
-      // Add anatomical gyri and sulci wave convolutions
-      const sulci = 1.0 + 0.07 * Math.sin(8 * sx + 5 * sy) * Math.cos(7 * sz + 3 * sx)
-                    + 0.04 * Math.sin(14 * sy + 9 * sz)
-                    + 0.03 * Math.cos(18 * sz + 12 * sx)
+      // Wireframe contour of true brain sulci
+      const brainWireMat = new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.08,
+        depthWrite: false,
+      })
+      const brainWire = buildMeshFromData(
+        geometryData.brain.vertices,
+        geometryData.brain.faces,
+        brainWireMat,
+        0
+      )
+      brainGroup.add(brainWire)
 
-      const scaleFactor = 1.48
-      const px = sx * sulci * scaleFactor
-      const py = sy * sulci * scaleFactor
-      const pz = sz * sulci * scaleFactor
+      // 2. Real Enhancing Tumor (ET) Mesh
+      if (geometryData.et && geometryData.et.vertices.length > 0) {
+        const etMat = new THREE.MeshStandardMaterial({
+          color: 0xff5722,
+          emissive: 0xe64a19,
+          emissiveIntensity: 0.75,
+          roughness: 0.3,
+          metalness: 0.2,
+          transparent: true,
+          opacity: 0.94,
+          side: THREE.DoubleSide,
+          depthWrite: true,
+        })
+        const etMesh = buildMeshFromData(
+          geometryData.et.vertices,
+          geometryData.et.faces,
+          etMat,
+          2
+        )
+        tumorGroup.add(etMesh)
 
-      positions[pIdx * 3] = px
-      positions[pIdx * 3 + 1] = py
-      positions[pIdx * 3 + 2] = pz
+        // Wireframe contour
+        const etWireMat = new THREE.MeshBasicMaterial({
+          color: 0xffa07a,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.45,
+        })
+        const etWire = buildMeshFromData(
+          geometryData.et.vertices,
+          geometryData.et.faces,
+          etWireMat,
+          2
+        )
+        tumorGroup.add(etWire)
+      }
 
-      // Color gradient: Electric cyan / azure on dorsal top, deeper blue on base
-      const t = (py + 1.2) / 2.4
-      colors[pIdx * 3] = THREE.MathUtils.lerp(0.08, 0.25, t)     // R
-      colors[pIdx * 3 + 1] = THREE.MathUtils.lerp(0.35, 0.85, t) // G
-      colors[pIdx * 3 + 2] = THREE.MathUtils.lerp(0.75, 1.0, t)  // B
+      // 3. Real Peritumoral Vasogenic Edema (WT) Mesh
+      if (geometryData.wt && geometryData.wt.vertices.length > 0) {
+        const wtMat = new THREE.MeshPhysicalMaterial({
+          color: 0x10b981,
+          emissive: 0x047857,
+          emissiveIntensity: 0.25,
+          roughness: 0.35,
+          transmission: 0.65,
+          transparent: true,
+          opacity: 0.26,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        })
+        const wtMesh = buildMeshFromData(
+          geometryData.wt.vertices,
+          geometryData.wt.faces,
+          wtMat,
+          3
+        )
+        edemaGroup.add(wtMesh)
 
-      pIdx++
+        const wtWireMat = new THREE.MeshBasicMaterial({
+          color: 0x34d399,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.2,
+          depthWrite: false,
+        })
+        const wtWire = buildMeshFromData(
+          geometryData.wt.vertices,
+          geometryData.wt.faces,
+          wtWireMat,
+          4
+        )
+        edemaGroup.add(wtWire)
+      }
+
+      // 4. Real Central Necrotic Cavity (NCR) Mesh
+      if (geometryData.ncr && geometryData.ncr.vertices.length > 0) {
+        const ncrMat = new THREE.MeshStandardMaterial({
+          color: 0x7f1d1d,
+          emissive: 0x991b1b,
+          emissiveIntensity: 0.45,
+          roughness: 0.8,
+          transparent: true,
+          opacity: 0.96,
+          side: THREE.DoubleSide,
+          depthWrite: true,
+        })
+        const ncrMesh = buildMeshFromData(
+          geometryData.ncr.vertices,
+          geometryData.ncr.faces,
+          ncrMat,
+          1
+        )
+        necroticGroup.add(ncrMesh)
+      }
+
+      // 5. Real Calibrated Contextual ROI Bounding Box
+      if (geometryData.bbox) {
+        const sz = geometryData.bbox.size
+        const cx = geometryData.bbox.center
+        tumorCenter = new THREE.Vector3(cx[0], cx[1], cx[2])
+
+        const boxGeo = new THREE.BoxGeometry(sz[0], sz[1], sz[2])
+        const edges = new THREE.EdgesGeometry(boxGeo)
+        const lineMat = new THREE.LineBasicMaterial({
+          color: 0x38bdf8,
+          transparent: true,
+          opacity: 0.75,
+        })
+        const roiLine = new THREE.LineSegments(edges, lineMat)
+        roiLine.position.set(cx[0], cx[1], cx[2])
+        roiBoxGroup.add(roiLine)
+
+        const boxFillMat = new THREE.MeshBasicMaterial({
+          color: 0x0284c7,
+          transparent: true,
+          opacity: 0.04,
+          side: THREE.BackSide,
+          depthWrite: false,
+        })
+        const boxFill = new THREE.Mesh(boxGeo, boxFillMat)
+        boxFill.position.set(cx[0], cx[1], cx[2])
+        roiBoxGroup.add(boxFill)
+      }
+    } else {
+      // Anatomically calibrated reference fallback
+      const N_POINTS = 9000
+      const pos = new Float32Array(N_POINTS * 3)
+      const col = new Float32Array(N_POINTS * 3)
+
+      for (let i = 0; i < N_POINTS; i++) {
+        const u = Math.random() * 2 - 1
+        const theta = Math.random() * 2 * Math.PI
+        const r0 = Math.sqrt(Math.max(0, 1 - u * u))
+
+        let sx = r0 * Math.cos(theta) * 1.35
+        let sy = u * 1.05
+        let sz = r0 * Math.sin(theta) * 1.55
+
+        const hemiSign = Math.sign(sx) || 1
+        const fissureGap = 0.07 * Math.exp(-Math.pow(sx * 4, 2))
+        sx += hemiSign * fissureGap
+
+        if (sy < -0.4) sy = sy * 0.75 - 0.1
+
+        const sulci = 1.0 + 0.07 * Math.sin(8 * sx + 5 * sy) * Math.cos(7 * sz + 3 * sx)
+        const scaleF = 1.48
+        pos[i * 3] = sx * sulci * scaleF
+        pos[i * 3 + 1] = sy * sulci * scaleF
+        pos[i * 3 + 2] = sz * sulci * scaleF
+
+        const t = (pos[i * 3 + 1] + 1.2) / 2.4
+        col[i * 3] = THREE.MathUtils.lerp(0.08, 0.25, t)
+        col[i * 3 + 1] = THREE.MathUtils.lerp(0.35, 0.85, t)
+        col[i * 3 + 2] = THREE.MathUtils.lerp(0.75, 1.0, t)
+      }
+
+      const brainGeo = new THREE.BufferGeometry()
+      brainGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+      brainGeo.setAttribute('color', new THREE.BufferAttribute(col, 3))
+      const brainMat = new THREE.PointsMaterial({
+        size: 0.06,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.7,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      })
+      brainGroup.add(new THREE.Points(brainGeo, brainMat))
+
+      // Fallback procedural tumor meshes
+      const wtGeo = new THREE.IcosahedronGeometry(0.85, 3)
+      const wtMat = new THREE.MeshPhysicalMaterial({
+        color: 0x10b981,
+        emissive: 0x047857,
+        emissiveIntensity: 0.25,
+        roughness: 0.4,
+        transmission: 0.6,
+        transparent: true,
+        opacity: 0.22,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      })
+      const wtMesh = new THREE.Mesh(wtGeo, wtMat)
+      wtMesh.position.copy(tumorCenter)
+      edemaGroup.add(wtMesh)
+
+      const etGeo = new THREE.IcosahedronGeometry(0.52, 4)
+      const etMat = new THREE.MeshStandardMaterial({
+        color: 0xff5722,
+        emissive: 0xe64a19,
+        emissiveIntensity: 0.65,
+        roughness: 0.35,
+        transparent: true,
+        opacity: 0.92,
+        depthWrite: true,
+      })
+      const etMesh = new THREE.Mesh(etGeo, etMat)
+      etMesh.position.copy(tumorCenter)
+      tumorGroup.add(etMesh)
+
+      const boxGeo = new THREE.BoxGeometry(2.1, 1.95, 2.05)
+      const edges = new THREE.EdgesGeometry(boxGeo)
+      const roiLine = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x38bdf8, opacity: 0.65, transparent: true }))
+      roiLine.position.copy(tumorCenter)
+      roiBoxGroup.add(roiLine)
     }
 
-    const brainGeo = new THREE.BufferGeometry()
-    brainGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    brainGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-
-    // High-performance circular soft radial particle texture
-    const pCanvas = document.createElement('canvas')
-    pCanvas.width = pCanvas.height = 32
-    const pCtx = pCanvas.getContext('2d')
-    if (pCtx) {
-      const grad = pCtx.createRadialGradient(16, 16, 0, 16, 16, 16)
-      grad.addColorStop(0, '#ffffff')
-      grad.addColorStop(0.35, '#38bdf8dd')
-      grad.addColorStop(0.7, '#0284c755')
-      grad.addColorStop(1, 'transparent')
-      pCtx.fillStyle = grad
-      pCtx.fillRect(0, 0, 32, 32)
-    }
-
-    const pTexture = new THREE.CanvasTexture(pCanvas)
-    const brainMat = new THREE.PointsMaterial({
-      size: 0.065,
-      vertexColors: true,
-      map: pTexture,
-      transparent: true,
-      opacity: 0.72,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    })
-
-    const brainPoints = new THREE.Points(brainGeo, brainMat)
-    brainGroup.add(brainPoints)
-
-    // Faint holographic outer brain boundary silhouette
-    const brainShellGeo = new THREE.SphereGeometry(1.9, 24, 18)
-    brainShellGeo.scale(1.25, 0.92, 1.4)
-    const brainShellMat = new THREE.MeshBasicMaterial({
-      color: 0x0284c7,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.06,
-    })
-    const brainShell = new THREE.Mesh(brainShellGeo, brainShellMat)
-    brainGroup.add(brainShell)
-
     // =========================================================================
-    // 3. Multi-Compartment BraTS Lesion (Edema WT + Enhancing Core ET + Necrotic NCR)
-    // Centered anatomically in frontoparietal white matter: (0.45, 0.22, 0.35)
+    // Orthogonal Radiological Slicing Planes
     // =========================================================================
-    const tumorCenter = new THREE.Vector3(0.48, 0.22, 0.32)
-
-    // A. Peritumoral Vasogenic Edema (WT / ED - Outer Translucent Emerald Halo)
-    const edemaGroup = new THREE.Group()
-    mainGroup.add(edemaGroup)
-    edemaGroupRef.current = edemaGroup
-
-    const wtGeo = new THREE.IcosahedronGeometry(0.88, 3)
-    const wtPos = wtGeo.attributes.position
-    for (let i = 0; i < wtPos.count; i++) {
-      const vx = wtPos.getX(i), vy = wtPos.getY(i), vz = wtPos.getZ(i)
-      const noise = 1 + 0.22 * Math.sin(vx * 4.5 + vy * 3.5) * Math.sin(vz * 4.0)
-      wtPos.setXYZ(i, vx * noise, vy * noise, vz * noise)
-    }
-    wtGeo.computeVertexNormals()
-
-    // Key fix: depthWrite: false + renderOrder: 3 ensures Edema never occludes inner tumor!
-    const wtMat = new THREE.MeshPhysicalMaterial({
-      color: 0x10b981,
-      emissive: 0x047857,
-      emissiveIntensity: 0.25,
-      roughness: 0.4,
-      transmission: 0.6,
-      transparent: true,
-      opacity: 0.22,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    })
-    const wtMesh = new THREE.Mesh(wtGeo, wtMat)
-    wtMesh.position.copy(tumorCenter)
-    wtMesh.renderOrder = 3
-    edemaGroup.add(wtMesh)
-
-    // Delicate emerald contour cage for edema shape readability
-    const wtWireMat = new THREE.MeshBasicMaterial({
-      color: 0x34d399,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.16,
-      depthWrite: false,
-    })
-    const wtWireMesh = new THREE.Mesh(wtGeo, wtWireMat)
-    wtWireMesh.position.copy(tumorCenter)
-    wtWireMesh.renderOrder = 4
-    edemaGroup.add(wtWireMesh)
-
-    // B. Enhancing Active Tumor Core (ET - Fiery Copper/Orange Hypervascular Neoplasm)
-    const tumorGroup = new THREE.Group()
-    mainGroup.add(tumorGroup)
-    tumorGroupRef.current = tumorGroup
-
-    const etGeo = new THREE.IcosahedronGeometry(0.55, 4)
-    const etPos = etGeo.attributes.position
-    for (let i = 0; i < etPos.count; i++) {
-      const vx = etPos.getX(i), vy = etPos.getY(i), vz = etPos.getZ(i)
-      const noise = 1 + 0.18 * Math.sin(vx * 6 + vy * 5) * Math.cos(vz * 6)
-      etPos.setXYZ(i, vx * noise, vy * noise, vz * noise)
-    }
-    etGeo.computeVertexNormals()
-
-    const etMat = new THREE.MeshStandardMaterial({
-      color: 0xff5722,
-      emissive: 0xe64a19,
-      emissiveIntensity: 0.65,
-      roughness: 0.35,
-      metalness: 0.25,
-      transparent: true,
-      opacity: 0.92,
-      depthWrite: true,
-    })
-    const etMesh = new THREE.Mesh(etGeo, etMat)
-    etMesh.position.copy(tumorCenter)
-    etMesh.renderOrder = 2
-    tumorGroup.add(etMesh)
-
-    // Glowing ET perimeter wireframe
-    const etWireMat = new THREE.MeshBasicMaterial({
-      color: 0xffa07a,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.45,
-    })
-    const etWireMesh = new THREE.Mesh(etGeo, etWireMat)
-    etWireMesh.position.copy(tumorCenter)
-    etWireMesh.renderOrder = 2
-    tumorGroup.add(etWireMesh)
-
-    // C. Central Necrotic Cavity (NCR / NET - Dark Crimson Non-enhancing Core)
-    const necroticGroup = new THREE.Group()
-    mainGroup.add(necroticGroup)
-    necroticGroupRef.current = necroticGroup
-
-    const ncrGeo = new THREE.IcosahedronGeometry(0.32, 3)
-    const ncrMat = new THREE.MeshStandardMaterial({
-      color: 0x7f1d1d,
-      emissive: 0x991b1b,
-      emissiveIntensity: 0.4,
-      roughness: 0.8,
-      transparent: true,
-      opacity: 0.95,
-      depthWrite: true,
-    })
-    const ncrMesh = new THREE.Mesh(ncrGeo, ncrMat)
-    ncrMesh.position.copy(tumorCenter)
-    ncrMesh.renderOrder = 1
-    necroticGroup.add(ncrMesh)
-
-    // =========================================================================
-    // 4. 3D Contextual ROI Bounding Box with Corner Accents
-    // =========================================================================
-    const roiBoxGroup = new THREE.Group()
-    mainGroup.add(roiBoxGroup)
-    roiBoxRef.current = roiBoxGroup
-
-    const boxSize = new THREE.Vector3(2.1, 1.95, 2.05)
-    const roiBoxGeo = new THREE.BoxGeometry(boxSize.x, boxSize.y, boxSize.z)
-    const roiEdges = new THREE.EdgesGeometry(roiBoxGeo)
-    const roiLineMat = new THREE.LineBasicMaterial({
-      color: 0x38bdf8,
-      transparent: true,
-      opacity: 0.65,
-    })
-    const roiBox = new THREE.LineSegments(roiEdges, roiLineMat)
-    roiBox.position.copy(tumorCenter)
-    roiBoxGroup.add(roiBox)
-
-    // Faint contextual box fill
-    const roiFillMat = new THREE.MeshBasicMaterial({
-      color: 0x0284c7,
-      transparent: true,
-      opacity: 0.04,
-      side: THREE.BackSide,
-      depthWrite: false,
-    })
-    const roiFill = new THREE.Mesh(roiBoxGeo, roiFillMat)
-    roiFill.position.copy(tumorCenter)
-    roiBoxGroup.add(roiFill)
-
-    // =========================================================================
-    // 5. Orthogonal Radiological Slicing Planes
-    // =========================================================================
-    const planesGroup = new THREE.Group()
-    mainGroup.add(planesGroup)
-    planesGroupRef.current = planesGroup
-    planesGroup.visible = false
-
-    // Axial (Cyan), Coronal (Purple), Sagittal (Amber)
     const makePlane = (color: number, rotX: number, rotY: number) => {
       const pGeo = new THREE.PlaneGeometry(3.6, 3.6, 12, 12)
       const pMat = new THREE.MeshBasicMaterial({
@@ -350,19 +487,15 @@ export default function ThreeBrainScene({
       return pMesh
     }
 
-    const axPlane = makePlane(0x38bdf8, Math.PI / 2, 0)   // Axial plane
-    const corPlane = makePlane(0xa855f7, 0, 0)            // Coronal plane
-    const sagPlane = makePlane(0xf59e0b, 0, Math.PI / 2)   // Sagittal plane
-
-    planesGroup.add(axPlane)
-    planesGroup.add(corPlane)
-    planesGroup.add(sagPlane)
+    planesGroup.add(makePlane(0x38bdf8, Math.PI / 2, 0))   // Axial
+    planesGroup.add(makePlane(0xa855f7, 0, 0))            // Coronal
+    planesGroup.add(makePlane(0xf59e0b, 0, Math.PI / 2))   // Sagittal
+    planesGroup.visible = showPlanes
 
     // =========================================================================
-    // 6. Illumination & Lighting Studio
+    // Illumination Studio
     // =========================================================================
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.75)
-    scene.add(ambientLight)
+    scene.add(new THREE.AmbientLight(0xffffff, 0.85))
 
     const keyLight = new THREE.DirectionalLight(0x38bdf8, 1.4)
     keyLight.position.set(5, 7, 6)
@@ -372,25 +505,24 @@ export default function ThreeBrainScene({
     warmFill.position.set(-6, -4, -4)
     scene.add(warmFill)
 
-    const rimLight = new THREE.DirectionalLight(0xa855f7, 0.8)
+    const rimLight = new THREE.DirectionalLight(0xa855f7, 0.85)
     rimLight.position.set(0, -6, 5)
     scene.add(rimLight)
 
     // =========================================================================
-    // 7. Interactive Pointer Controls (Rotate, Pan, Zoom)
+    // Interactive Pointer Controls
     // =========================================================================
-    let isDragging = false
     let prevMouseX = 0
     let prevMouseY = 0
 
     const onPointerDown = (e: MouseEvent) => {
-      isDragging = true
+      isDraggingRef.current = true
       prevMouseX = e.clientX
       prevMouseY = e.clientY
     }
 
     const onPointerMove = (e: MouseEvent) => {
-      if (!isDragging) return
+      if (!isDraggingRef.current) return
       const deltaX = e.clientX - prevMouseX
       const deltaY = e.clientY - prevMouseY
       prevMouseX = e.clientX
@@ -401,12 +533,10 @@ export default function ThreeBrainScene({
     }
 
     const onPointerUp = () => {
-      isDragging = false
+      isDraggingRef.current = false
     }
 
     const onWheel = (e: WheelEvent) => {
-      // Only zoom if user explicitly holds Ctrl/Meta key (standard map/3D viewport convention)
-      // This prevents trapping the user's page scroll when browsing down the page!
       if (e.ctrlKey || e.metaKey || e.altKey) {
         e.preventDefault()
         camera.position.z = Math.max(3.0, Math.min(12.0, camera.position.z + e.deltaY * 0.004))
@@ -420,9 +550,7 @@ export default function ThreeBrainScene({
     window.addEventListener('mouseup', onPointerUp)
     domEl.addEventListener('wheel', onWheel, { passive: false })
 
-    // =========================================================================
-    // 8. Viewport Visibility Tracking & Optimized Animation Loop
-    // =========================================================================
+    // Viewport Visibility Tracking & Render Loop
     let isVisible = true
     let observer: IntersectionObserver | null = null
 
@@ -441,30 +569,18 @@ export default function ThreeBrainScene({
 
     const animate = () => {
       animId = requestAnimationFrame(animate)
-
-      // When scrolled out of view, pause rendering to save 100% GPU/CPU for smooth page scrolling!
       if (!isVisible) return
 
       const delta = clock.getDelta()
-      const elapsed = clock.getElapsedTime()
 
-      if (autoRotate && !isDragging) {
+      if (autoRotate && !isDraggingRef.current) {
         mainGroup.rotation.y += delta * 0.22
       }
-
-      // Subtle biological pulsation of active neoplastic core
-      const pulse = 1.0 + 0.035 * Math.sin(elapsed * 2.2)
-      etMesh.scale.set(pulse, pulse, pulse)
-      etWireMesh.scale.set(pulse, pulse, pulse)
-
-      // Slight shimmering of cortical particle cloud
-      brainMat.size = 0.065 + 0.005 * Math.sin(elapsed * 1.5)
 
       renderer.render(scene, camera)
     }
     animate()
 
-    // Responsive Canvas Resize
     const handleResize = () => {
       if (!container) return
       const w = Math.max(container.clientWidth || 800, 320)
@@ -484,19 +600,11 @@ export default function ThreeBrainScene({
       window.removeEventListener('mouseup', onPointerUp)
       domEl.removeEventListener('wheel', onWheel)
       renderer.dispose()
-      brainGeo.dispose()
-      brainMat.dispose()
-      wtGeo.dispose()
-      wtMat.dispose()
-      etGeo.dispose()
-      etMat.dispose()
-      ncrGeo.dispose()
-      ncrMat.dispose()
       if (container.contains(domEl)) {
         container.removeChild(domEl)
       }
     }
-  }, [autoRotate])
+  }, [geometryData, autoRotate])
 
   // Reactive Visibility Toggles
   useEffect(() => {
@@ -556,60 +664,86 @@ export default function ThreeBrainScene({
         ref={mountRef}
         style={{ height }}
         className="w-full cursor-grab active:cursor-grabbing"
-        aria-label="Interactive 3D Brain and Tumor Visualization"
+        aria-label="Real 3D Patient Brain and Tumor Surface Reconstruction"
       />
 
-      {/* Header Floating Status */}
-      <div className="pointer-events-none absolute left-5 top-5 flex items-center gap-2.5 rounded-full border border-white/10 bg-black/60 px-3.5 py-1.5 backdrop-blur-md">
-        <span className="flex h-2.5 w-2.5 rounded-full bg-cyan-400 shadow-[0_0_10px_#38bdf8] animate-pulse" />
-        <span className="text-xs font-semibold tracking-wider uppercase text-zinc-200">
-          3D Volumetric Mesh Reconstruction · BraTS Coordinate Space
-        </span>
+      {/* Floating Status & Case Selector Header */}
+      <div className="absolute left-5 top-5 right-5 flex flex-wrap items-center justify-between gap-3 pointer-events-none">
+        <div className="flex items-center gap-2.5 rounded-full border border-white/10 bg-black/75 px-3.5 py-1.5 backdrop-blur-md pointer-events-auto">
+          <span className="flex h-2.5 w-2.5 rounded-full bg-cyan-400 shadow-[0_0_10px_#38bdf8] animate-pulse" />
+          <div className="flex items-center gap-2 text-xs font-semibold tracking-wide text-zinc-200">
+            <span>
+              {geometryData?.is_real_data ? 'Real Patient NIfTI Mesh' : '3D Reconstruction'}
+            </span>
+            <span className="text-zinc-500">·</span>
+            <span className="font-mono text-cyan-300 text-[11px]">
+              {geometryData?.dataset_source ?? 'BraTS 2020'}
+            </span>
+          </div>
+        </div>
+
+        {/* Dynamic Case Selector */}
+        <div className="flex items-center gap-2 pointer-events-auto">
+          <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-black/80 px-3 py-1 text-xs backdrop-blur-md">
+            <span className="text-[11px] font-mono text-zinc-400">Scan:</span>
+            <select
+              value={selectedCase}
+              onChange={(e) => setSelectedCase(e.target.value)}
+              className="bg-transparent text-xs font-mono font-semibold text-white focus:outline-none cursor-pointer"
+            >
+              <option value="CASE-2026-001" className="bg-[#040813] text-white">CASE-2026-001 (BraTS_001 · HGG)</option>
+              <option value="CASE-2026-002" className="bg-[#040813] text-white">CASE-2026-002 (BraTS_002 · HGG)</option>
+            </select>
+            {loading && (
+              <span className="h-2 w-2 rounded-full bg-cyan-400 animate-ping" />
+            )}
+          </div>
+
+          {/* Camera Toolbar */}
+          <div className="flex items-center gap-1 rounded-full border border-white/10 bg-black/80 p-1 shadow-xl backdrop-blur-md">
+            <button
+              onClick={() => setAutoRotate(!autoRotate)}
+              title={autoRotate ? 'Pause Rotation' : 'Auto Rotate'}
+              className={`rounded-full p-1.5 text-xs transition-colors ${
+                autoRotate ? 'bg-sky-500/25 text-sky-300' : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              <RotateCw className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={handleFocusTumor}
+              title="Focus on Tumor Lesion"
+              className="rounded-full p-1.5 text-zinc-400 transition-colors hover:text-sky-300"
+            >
+              <Focus className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => handleZoom(-0.8)}
+              title="Zoom In"
+              className="rounded-full p-1.5 text-zinc-400 transition-colors hover:text-white"
+            >
+              <ZoomIn className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => handleZoom(0.8)}
+              title="Zoom Out"
+              className="rounded-full p-1.5 text-zinc-400 transition-colors hover:text-white"
+            >
+              <ZoomOut className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={handleResetCamera}
+              title="Reset Camera"
+              className="rounded-full p-1.5 text-zinc-400 transition-colors hover:text-white"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Camera Toolbar Top-Right */}
-      <div className="absolute right-5 top-5 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/70 p-1.5 shadow-xl backdrop-blur-md">
-        <button
-          onClick={() => setAutoRotate(!autoRotate)}
-          title={autoRotate ? 'Pause Rotation' : 'Auto Rotate'}
-          className={`rounded-full p-2 text-xs transition-colors ${
-            autoRotate ? 'bg-sky-500/25 text-sky-300' : 'text-zinc-400 hover:text-white'
-          }`}
-        >
-          <RotateCw className="h-4 w-4" />
-        </button>
-        <button
-          onClick={handleFocusTumor}
-          title="Focus on Tumor Lesion"
-          className="rounded-full p-2 text-zinc-400 transition-colors hover:text-sky-300"
-        >
-          <Focus className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => handleZoom(-0.8)}
-          title="Zoom In"
-          className="rounded-full p-2 text-zinc-400 transition-colors hover:text-white"
-        >
-          <ZoomIn className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => handleZoom(0.8)}
-          title="Zoom Out"
-          className="rounded-full p-2 text-zinc-400 transition-colors hover:text-white"
-        >
-          <ZoomOut className="h-4 w-4" />
-        </button>
-        <button
-          onClick={handleResetCamera}
-          title="Reset Camera Orientation"
-          className="rounded-full p-2 text-zinc-400 transition-colors hover:text-white"
-        >
-          <Maximize2 className="h-4 w-4" />
-        </button>
-      </div>
-
-      {/* Layer Control Strip at Bottom */}
-      <div className="absolute bottom-5 left-5 right-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/80 px-4 py-3 shadow-2xl backdrop-blur-xl">
+      {/* Layer Control Strip & Metric Badges at Bottom */}
+      <div className="absolute bottom-5 left-5 right-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/85 px-4 py-3 shadow-2xl backdrop-blur-xl">
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="flex items-center gap-1.5 text-zinc-400 font-semibold mr-1">
             <Layers className="h-3.5 w-3.5 text-sky-400" />
@@ -626,7 +760,7 @@ export default function ThreeBrainScene({
             }`}
           >
             <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#38bdf8]" />
-            <span>Brain Cortex</span>
+            <span>Brain Cortex ({geometryData?.brain.vertex_count ?? 3008} v)</span>
           </button>
 
           {/* Enhancing Tumor (ET) Toggle */}
@@ -639,7 +773,12 @@ export default function ThreeBrainScene({
             }`}
           >
             <span className="h-2 w-2 rounded-full bg-[#ff5722] shadow-[0_0_6px_#ff5722]" />
-            <span>Enhancing Tumor (ET)</span>
+            <span>Enhancing Core (ET)</span>
+            {geometryData?.et?.volume_cm3 && (
+              <span className="font-mono text-[10px] text-orange-300 ml-1">
+                {geometryData.et.volume_cm3} cm³
+              </span>
+            )}
           </button>
 
           {/* Peritumoral Edema (WT) Toggle */}
@@ -652,7 +791,12 @@ export default function ThreeBrainScene({
             }`}
           >
             <span className="h-2 w-2 rounded-full bg-[#10b981] shadow-[0_0_6px_#10b981]" />
-            <span>Edema (WT)</span>
+            <span>Vasogenic Edema (WT)</span>
+            {geometryData?.wt?.volume_cm3 && (
+              <span className="font-mono text-[10px] text-emerald-300 ml-1">
+                {geometryData.wt.volume_cm3} cm³
+              </span>
+            )}
           </button>
 
           {/* Necrotic Core (NCR) Toggle */}
@@ -665,7 +809,7 @@ export default function ThreeBrainScene({
             }`}
           >
             <span className="h-2 w-2 rounded-full bg-[#dc2626] shadow-[0_0_6px_#dc2626]" />
-            <span>Necrotic Core (NCR)</span>
+            <span>Necrotic Cavity (NCR)</span>
           </button>
 
           {/* ROI Box Toggle */}
@@ -677,8 +821,8 @@ export default function ThreeBrainScene({
                 : 'border-white/10 text-zinc-500 hover:text-zinc-300 bg-white/5'
             }`}
           >
-            <span className="h-2 w-2 rounded-full border border-sky-400" />
-            <span>ROI Bounding Box</span>
+            <Box className="h-3 w-3 text-sky-400" />
+            <span>ROI Context Margin (+10 vox)</span>
           </button>
 
           {/* Slicing Planes Toggle */}
@@ -695,9 +839,15 @@ export default function ThreeBrainScene({
           </button>
         </div>
 
-        {/* Camera Info Tag */}
-        <div className="text-[11px] font-mono text-zinc-400">
-          Dist: {cameraDistance}m · Drag to rotate · Ctrl + Scroll to zoom
+        {/* Live Metrics & Interaction Hint */}
+        <div className="flex items-center gap-3 text-[11px] font-mono text-zinc-400">
+          <span className="hidden sm:inline-block">
+            {geometryData?.dimensions_voxel
+              ? `Voxel Grid: ${geometryData.dimensions_voxel.join('×')}`
+              : 'Iso-Surface 1mm³'}
+          </span>
+          <span className="text-zinc-600">·</span>
+          <span>Ctrl + Scroll to zoom</span>
         </div>
       </div>
     </div>
